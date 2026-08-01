@@ -7,6 +7,7 @@ import {
   parseBboxInput,
   type Range,
   shallowWaterContour,
+  simplifyContour,
 } from "@bok/core";
 import {
   type GeoJSONSource,
@@ -23,6 +24,7 @@ import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
 import { type Composite, fetchComposite } from "./composite.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { renderComposite, waterRange } from "./depth-ramp.js";
+import { SimplifyPanel } from "./SimplifyPanel.js";
 import { ThresholdPanel } from "./ThresholdPanel.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -123,6 +125,7 @@ export function MapView() {
   const [opacity, setOpacity] = useState(0.8);
   const [ratioRange, setRatioRange] = useState<Range | null>(null);
   const [threshold, setThreshold] = useState<number | null>(null);
+  const [tolerance, setTolerance] = useState(0);
 
   function showBbox(next: BBox | null) {
     setBboxState(next);
@@ -337,10 +340,20 @@ export function MapView() {
     return shallowWaterContour(composite, threshold);
   }, [composite, threshold]);
 
+  /**
+   * Simplification is derived, never applied in place: `contour` stays at full
+   * resolution so dragging the tolerance back restores every vertex (story 4.2's
+   * non-destructive requirement).
+   */
+  const simplified = useMemo(
+    () => (contour ? simplifyContour(contour, tolerance) : null),
+    [contour, tolerance],
+  );
+
   useEffect(() => {
     const source = mapRef.current?.getSource(CONTOUR_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(contourFeature(contour));
-  }, [contour]);
+    source?.setData(contourFeature(simplified));
+  }, [simplified]);
 
   const areaKm2 = useMemo(() => (bbox ? bboxAreaKm2(bbox) : null), [bbox]);
   const limitCheck: ProcessingApiLimitCheck | null = useMemo(
@@ -381,6 +394,15 @@ export function MapView() {
             onThresholdChange={setThreshold}
             vertexCount={contour ? countVertices(contour) : 0}
             ringCount={contour ? contour.coordinates.length : 0}
+          />
+        )}
+        {contour && simplified && (
+          <SimplifyPanel
+            tolerance={tolerance}
+            onToleranceChange={setTolerance}
+            originalVertices={countVertices(contour)}
+            simplifiedVertices={countVertices(simplified)}
+            ringCount={simplified.coordinates.length}
           />
         )}
       </div>

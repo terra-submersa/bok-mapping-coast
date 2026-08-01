@@ -13,4 +13,5 @@ export {
   type ProcessingApiLimitCheck,
   SENTINEL2_NATIVE_RESOLUTION_M,
 } from "./processing-limit.js";
+export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";

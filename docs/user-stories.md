@@ -165,12 +165,25 @@ As a Planner, I can save a calibration with the project so I don't redo it.
 As a Planner, I can choose which ring is my survey area, discarding offshore fragments
 and noise.
 
-### 4.2 Simplify with visible vertex count `todo` · **Walking Skeleton**
+### 4.2 Simplify with visible vertex count `done` · **Walking Skeleton**
 As a Planner, I can simplify the polygon with a tolerance control and see the vertex
 count, so it stays within what Pilot 2 accepts.
 
 - Live vertex count with a warning above a configured ceiling
 - **Non-destructive** — the original contour is retained
+
+> **Done.** `simplifyContour` (Douglas–Peucker via turf, tolerance in metres)
+> is *derived* state: the full-resolution contour is retained, so dragging the
+> tolerance back restores every vertex. Verified in the browser —
+> 3,151 → 553 vertices at 40 m → back to 3,151 at 0 m.
+>
+> Ceiling is `PILOT2_VERTEX_CEILING = 500`, **an estimate, not a measured limit**.
+> Correct it from whatever the RC actually shows in 6.1.
+>
+> Note: simplification does *not* reduce the **ring** count — turf will not collapse
+> a ring below a triangle, so 102 fragments survive as triangles. Cutting offshore
+> noise needs ring selection, i.e. story **4.1**, which is not in the skeleton. This
+> is the strongest argument yet for promoting 4.1.
 
 ### 4.3 Landward buffer `todo`
 As a Planner, I can apply a landward buffer in metres, so flight lines catch shoreline
