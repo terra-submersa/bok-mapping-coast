@@ -7,6 +7,7 @@ import {
 } from "@bok/core";
 import {
   type GeoJSONSource,
+  type ImageSource,
   Map as MapLibreMap,
   NavigationControl,
   type StyleSpecification,
@@ -16,6 +17,9 @@ import { TerraDraw, TerraDrawRectangleMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { AoiPanel } from "./AoiPanel.js";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
+import { type Composite, fetchComposite } from "./composite.js";
+import { DepthPanel } from "./DepthPanel.js";
+import { renderComposite, waterRange } from "./depth-ramp.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // Kiladha Bay, Argolic Gulf — same AOI as scripts/spike-sdb-kiladha.mjs.
@@ -23,21 +27,33 @@ const KILADHA_CENTER: [number, number] = [23.1225, 37.4265];
 const KILADHA_ZOOM = 14;
 
 const AOI_SOURCE_ID = "aoi";
+const DEPTH_SOURCE_ID = "depth";
+const DEPTH_LAYER_ID = "depth-raster";
 
-// Plain OSM raster tiles — no API key required. Swap for a vector style once
-// one is chosen (story 2.3 needs imagery, not a street basemap).
-const OSM_STYLE: StyleSpecification = {
+/**
+ * Satellite imagery, not a street basemap: story 2.3 exists so the Planner can
+ * judge the contour against sand, rock and Posidonia they recognise. Esri World
+ * Imagery needs no API key; attribution is required.
+ */
+const SATELLITE_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    osm: {
+    satellite: {
       type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      ],
       tileSize: 256,
-      attribution: "&copy; OpenStreetMap contributors",
+      maxzoom: 19,
+      attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
     },
   },
-  layers: [{ id: "osm", type: "raster", source: "osm" }],
+  layers: [{ id: "satellite", type: "raster", source: "satellite" }],
 };
+
+/** Default composite window: the most recent complete summer, as in the spike. */
+const DEFAULT_FROM = "2025-06-01";
+const DEFAULT_TO = "2025-09-15";
 
 function emptyFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   return { type: "FeatureCollection", features: [] };
@@ -84,6 +100,13 @@ export function MapView() {
   const [bbox, setBboxState] = useState<BBox | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
+  const [from, setFrom] = useState(DEFAULT_FROM);
+  const [to, setTo] = useState(DEFAULT_TO);
+  const [composite, setComposite] = useState<Composite | null>(null);
+  const [loadingComposite, setLoadingComposite] = useState(false);
+  const [compositeError, setCompositeError] = useState<string | null>(null);
+  const [opacity, setOpacity] = useState(0.8);
+
   function showBbox(next: BBox | null) {
     setBboxState(next);
     const source = mapRef.current?.getSource(AOI_SOURCE_ID) as GeoJSONSource | undefined;
@@ -112,6 +135,73 @@ export function MapView() {
     }
     showBbox(null);
     clearStoredAoi();
+    clearComposite();
+  }
+
+  function clearComposite() {
+    setComposite(null);
+    setCompositeError(null);
+    const map = mapRef.current;
+    if (map?.getLayer(DEPTH_LAYER_ID)) map.removeLayer(DEPTH_LAYER_ID);
+    if (map?.getSource(DEPTH_SOURCE_ID)) map.removeSource(DEPTH_SOURCE_ID);
+  }
+
+  /** Paints the composite into an image source pinned to its own bbox corners. */
+  function paintComposite(next: Composite) {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const range = waterRange(next);
+    if (!range) {
+      setCompositeError("The composite has no water pixels — check the AOI and the date range.");
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = next.width;
+    canvas.height = next.height;
+    canvas.getContext("2d")?.putImageData(renderComposite(next, range), 0, 0);
+
+    const [minLon, minLat, maxLon, maxLat] = next.bbox;
+    const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+      [minLon, maxLat],
+      [maxLon, maxLat],
+      [maxLon, minLat],
+      [minLon, minLat],
+    ];
+    const url = canvas.toDataURL("image/png");
+
+    const existing = map.getSource(DEPTH_SOURCE_ID) as ImageSource | undefined;
+    if (existing) {
+      existing.updateImage({ url, coordinates });
+    } else {
+      map.addSource(DEPTH_SOURCE_ID, { type: "image", url, coordinates });
+      // Below the AOI outline so the boundary stays visible on top of the ramp.
+      map.addLayer(
+        {
+          id: DEPTH_LAYER_ID,
+          type: "raster",
+          source: DEPTH_SOURCE_ID,
+          paint: { "raster-opacity": opacity, "raster-resampling": "nearest" },
+        },
+        map.getLayer("aoi-fill") ? "aoi-fill" : undefined,
+      );
+    }
+  }
+
+  async function handleLoadComposite() {
+    if (!bbox) return;
+    setLoadingComposite(true);
+    setCompositeError(null);
+    try {
+      const next = await fetchComposite({ bbox, from, to });
+      setComposite(next);
+      paintComposite(next);
+    } catch (err) {
+      setCompositeError(err instanceof Error ? err.message : "Could not load the composite.");
+    } finally {
+      setLoadingComposite(false);
+    }
   }
 
   function handlePasteApply(text: string): string | null {
@@ -135,7 +225,7 @@ export function MapView() {
 
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: OSM_STYLE,
+      style: SATELLITE_STYLE,
       center: KILADHA_CENTER,
       zoom: KILADHA_ZOOM,
     });
@@ -183,6 +273,13 @@ export function MapView() {
     };
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map?.getLayer(DEPTH_LAYER_ID)) {
+      map.setPaintProperty(DEPTH_LAYER_ID, "raster-opacity", opacity);
+    }
+  }, [opacity]);
+
   const areaKm2 = useMemo(() => (bbox ? bboxAreaKm2(bbox) : null), [bbox]);
   const limitCheck: ProcessingApiLimitCheck | null = useMemo(
     () => (bbox ? checkProcessingApiLimit(bbox) : null),
@@ -192,15 +289,30 @@ export function MapView() {
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
-      <AoiPanel
-        bbox={bbox}
-        areaKm2={areaKm2}
-        limitCheck={limitCheck}
-        isDrawing={isDrawing}
-        onStartDraw={handleStartDraw}
-        onClear={handleClear}
-        onPasteApply={handlePasteApply}
-      />
+      <div className="sidebar">
+        <AoiPanel
+          bbox={bbox}
+          areaKm2={areaKm2}
+          limitCheck={limitCheck}
+          isDrawing={isDrawing}
+          onStartDraw={handleStartDraw}
+          onClear={handleClear}
+          onPasteApply={handlePasteApply}
+        />
+        <DepthPanel
+          hasAoi={bbox !== null}
+          from={from}
+          to={to}
+          onFromChange={setFrom}
+          onToChange={setTo}
+          onLoad={handleLoadComposite}
+          loading={loadingComposite}
+          error={compositeError}
+          composite={composite}
+          opacity={opacity}
+          onOpacityChange={setOpacity}
+        />
+      </div>
     </div>
   );
 }

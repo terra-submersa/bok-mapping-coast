@@ -30,24 +30,10 @@ export function AoiPanel({
   }
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        top: 12,
-        left: 12,
-        zIndex: 1,
-        background: "white",
-        borderRadius: 8,
-        padding: 12,
-        width: 280,
-        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.3)",
-        fontFamily: "sans-serif",
-        fontSize: 13,
-      }}
-    >
-      <strong>Area of interest</strong>
+    <section className="panel">
+      <h2>Area of interest</h2>
 
-      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+      <div className="row">
         <button type="button" onClick={onStartDraw} disabled={isDrawing}>
           {isDrawing ? "Drawing… click and drag" : "Draw AOI"}
         </button>
@@ -64,24 +50,18 @@ export function AoiPanel({
           onChange={(e) => setPasteText(e.target.value)}
           placeholder="23.105,37.418,23.14,37.435"
           rows={2}
-          style={{ width: "100%", marginTop: 4, boxSizing: "border-box" }}
         />
-        <button
-          type="button"
-          onClick={handleApply}
-          disabled={!pasteText.trim()}
-          style={{ marginTop: 4 }}
-        >
+        <button type="button" onClick={handleApply} disabled={!pasteText.trim()}>
           Apply
         </button>
-        {pasteError && <p style={{ color: "#b00020", marginTop: 4 }}>{pasteError}</p>}
+        {pasteError && <p className="error">{pasteError}</p>}
       </div>
 
       {bbox && areaKm2 !== null && (
-        <div style={{ marginTop: 10, borderTop: "1px solid #ddd", paddingTop: 8 }}>
+        <div className="stat">
           <div>Area: {areaKm2.toFixed(2)} km²</div>
           {limitCheck?.exceeds && (
-            <p style={{ color: "#b00020", marginTop: 4 }}>
+            <p className="error">
               This AOI exceeds the Processing API's single-request limit (
               {Math.round(limitCheck.widthPx)}×{Math.round(limitCheck.heightPx)} px at Sentinel-2's
               native 10 m resolution, cap is 2500×2500 px). Draw a smaller box.
@@ -89,6 +69,6 @@ export function AoiPanel({
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

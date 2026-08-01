@@ -95,9 +95,22 @@ thin areas.
 - **Not optional.** Without it, a two-cloudy-scene artefact is indistinguishable
   from a real shallow shelf.
 
-### 2.3 View depth as a colour ramp over imagery `todo` · **Walking Skeleton**
+### 2.3 View depth as a colour ramp over imagery `done` · **Walking Skeleton**
 As a Planner, I can view the depth raster over satellite imagery, so I can judge it
 against features I recognise.
+
+> **Done.** Basemap is now Esri World Imagery, not OSM streets — the whole point is
+> judging the ramp against sand, rock and *Posidonia* you recognise. The composite
+> is fetched via a Vite dev proxy, decoded with `geotiff.js`, and painted into a
+> MapLibre image source pinned to the AOI corners, with an opacity slider.
+>
+> The ramp is stretched to the 2nd–98th percentile of **water pixels only**
+> (`percentileRange` in core): Stumpf ratios sit in a narrow band, so a naive
+> min/max stretch renders the whole bay one flat colour. Pixels with no
+> contributing scenes are transparent, so land shows through as imagery.
+>
+> Scene count is surfaced here rather than waiting for 2.2 — it came free in band 2.
+> Kiladha over summer 2025 reports a median of **46 scenes per pixel**.
 
 ### 2.4 Exclude a date range or sub-area `todo`
 As a Planner, I can exclude a date or sub-area from the composite, so I can throw out

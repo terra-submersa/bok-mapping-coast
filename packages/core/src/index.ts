@@ -7,3 +7,4 @@ export {
   type ProcessingApiLimitCheck,
   SENTINEL2_NATIVE_RESOLUTION_M,
 } from "./processing-limit.js";
+export { normalise, percentileRange, type Range } from "./stretch.js";
