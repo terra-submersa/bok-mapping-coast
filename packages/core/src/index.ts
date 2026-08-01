@@ -1,2 +1,9 @@
 export type { BBox } from "./bbox.js";
 export { bboxAreaKm2 } from "./bbox.js";
+export { parseBboxInput } from "./bbox-input.js";
+export {
+  checkProcessingApiLimit,
+  PROCESSING_API_MAX_SIDE_PX,
+  type ProcessingApiLimitCheck,
+  SENTINEL2_NATIVE_RESOLUTION_M,
+} from "./processing-limit.js";

@@ -38,12 +38,18 @@ learned that for the cost of an afternoon instead of a month.
 
 ## Epic 1 — Define an area of interest `epic:aoi`
 
-### 1.1 Draw or paste a bounding box `todo` · **Walking Skeleton**
+### 1.1 Draw or paste a bounding box `done` · **Walking Skeleton**
 As a Planner, I can define a bounding box for my AOI so the backend knows what to fetch.
 
 - AOI persists between sessions
 - Area shown in km²
 - Warning if the box exceeds the Processing API single-request limit
+
+> **Done.** Drag a rectangle with `terra-draw`, or paste `minLon,minLat,maxLon,maxLat`
+> or GeoJSON. Persists to `localStorage`. `packages/core` holds the pure parts —
+> `parseBboxInput` and `checkProcessingApiLimit`, which flags a bbox wider than
+> 2500 px at Sentinel-2's native 10 m (the synchronous Processing API cap).
+> Verified in a browser end to end; the Kiladha spike bbox reads 5.84 km².
 
 ### 1.2 Name and save a project `todo`
 As a Planner, I can save an AOI as a named project, so Kiladha stays separate from later sites.
