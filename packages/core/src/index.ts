@@ -7,6 +7,7 @@ export {
   type RatioGrid,
   shallowWaterContour,
 } from "./contour.js";
+export { largestRing } from "./largest-ring.js";
 export {
   checkProcessingApiLimit,
   PROCESSING_API_MAX_SIDE_PX,

@@ -1,4 +1,3 @@
-// KML serialization for DJI Pilot 2 (story 6.1). Not yet implemented —
-// see CLAUDE.md: "the reliable approach is to export a dummy mission from
-// Pilot itself and use its XML as a template."
-export {};
+// KML serialization for DJI Pilot 2 (story 6.1). Isolated here because Pilot is
+// fussy and this will need empirical fixing against a Pilot-exported file.
+export { type BoundaryKmlOptions, boundaryKml } from "./boundary-kml.js";

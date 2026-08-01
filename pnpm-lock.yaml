@@ -48,6 +48,9 @@ importers:
       '@bok/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@bok/dji':
+        specifier: workspace:^
+        version: link:../../packages/dji
       geotiff:
         specifier: ^3.0.5
         version: 3.0.5
@@ -111,6 +114,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@types/geojson':
+        specifier: ^7946.0.16
+        version: 7946.0.16
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

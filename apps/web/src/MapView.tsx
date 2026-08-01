@@ -24,6 +24,7 @@ import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
 import { type Composite, fetchComposite } from "./composite.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { renderComposite, waterRange } from "./depth-ramp.js";
+import { ExportPanel } from "./ExportPanel.js";
 import { SimplifyPanel } from "./SimplifyPanel.js";
 import { ThresholdPanel } from "./ThresholdPanel.js";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -403,6 +404,15 @@ export function MapView() {
             originalVertices={countVertices(contour)}
             simplifiedVertices={countVertices(simplified)}
             ringCount={simplified.coordinates.length}
+          />
+        )}
+        {simplified && threshold !== null && simplified.coordinates.length > 0 && (
+          <ExportPanel
+            contour={simplified}
+            threshold={threshold}
+            tolerance={tolerance}
+            from={from}
+            to={to}
           />
         )}
       </div>

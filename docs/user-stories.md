@@ -231,13 +231,35 @@ is a one-morning job.
 
 ## Epic 6 — Export `epic:export`
 
-### 6.1 Export Pilot 2-compatible boundary KML `todo` · **Walking Skeleton**
+### 6.1 Export Pilot 2-compatible boundary KML `doing` · **Walking Skeleton**
 As a Planner, I can export the polygon as a KML that DJI Pilot 2 imports as a mapping
 boundary.
 
 - Validated against a KML that Pilot 2 itself produced
 - **Not done until a file has round-tripped on the actual RC.** Pilot is fussy about
   KML structure; the reliable approach is to use a Pilot-exported mission as template.
+
+> **Built, not validated — deliberately left open.**
+>
+> `boundaryKml` in `packages/dji` emits OGC KML 2.2: one Document, one Placemark,
+> one Polygon, one LinearRing, `clampToGround`, no waypoints. `largestRing` in core
+> picks the biggest ring and drops holes, because Pilot 2 wants one simple polygon
+> and the contour is ~100 rings of mostly offshore noise.
+>
+> The browser downloads a well-formed file: 91 vertices at 25 m tolerance, ring
+> closed, coordinates inside the AOI, provenance (date range, threshold, tolerance)
+> in the `<description>`.
+>
+> **What is missing is the only thing that counts.** This was written from the KML
+> spec, *not* from a mission Pilot 2 exported itself, which CLAUDE.md names as the
+> reliable approach. Two acceptance criteria are unmet:
+>
+> 1. Export a dummy mapping mission from Pilot 2 on the RC and diff its XML against
+>    `boundary-kml.ts`. Expect DJI-specific extensions we are not emitting.
+> 2. Import our KML on the actual RC and confirm it loads as a mapping boundary.
+>
+> Also unverified: `PILOT2_VERTEX_CEILING = 500` is a guess. Correct it from what
+> the RC actually accepts.
 
 ### 6.2 Mission card `todo`
 As a Pilot, I get a printable mission card with course angle, altitude, overlap, time
@@ -267,3 +289,15 @@ The thinnest chain that produces a file you can actually fly at Kiladha:
 **0.1** (spike, first) → **1.1** → **2.1** → **2.3** → **3.1** → **4.2** → **6.1**
 
 No calibration in metres. No editing. No buffer. Bounding box to KML.
+
+**Status: the chain runs end to end.** Draw a bbox → request an SDB composite →
+see it over satellite imagery → drag the threshold → simplify → download a KML.
+
+Two things stand between this and a flyable file:
+
+- **6.1 is unvalidated on hardware** — see the story. Nothing else in the chain
+  can be trusted in the field until a KML round-trips on the RC.
+- **4.1 (select the contour ring) should probably be promoted.** Simplification
+  cannot remove the ~100 offshore fragments, so export currently falls back to
+  "largest ring wins". That is a guess standing in for a decision the Planner
+  should be making.
