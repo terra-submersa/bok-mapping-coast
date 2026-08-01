@@ -18,7 +18,7 @@ which is mostly the mission card, and the fact that nothing can be re-run in the
 
 ## Epic 0 — Spike
 
-### 0.1 Can we get a plausible 4 m contour in Kiladha Bay? `spike`
+### 0.1 Can we get a plausible 4 m contour in Kiladha Bay? `spike` · `done`
 
 Throwaway script, no app, no tests, no architecture. Hit the CDSE Processing API for
 the Kiladha AOI, run a Stumpf ratio over a temporal median, dump a GeoTIFF, open it
@@ -28,6 +28,11 @@ in QGIS.
 plausible against known features — the Lambayanna structures, the visible sand/rock
 transitions — everything downstream is ordinary engineering. If it isn't, we've
 learned that for the cost of an afternoon instead of a month.
+
+> **Result: yes.** `scripts/spike-sdb-kiladha.mjs` ran against the 2025-06-01 to
+> 2025-09-15 composite and produced `scripts/output/kiladha-sdb-2025-06-01_2025-09-15.tif`.
+> Checked in QGIS against the Lambayanna structures — plausible. Everything downstream
+> is ordinary engineering; proceeding to the Walking Skeleton.
 
 ---
 

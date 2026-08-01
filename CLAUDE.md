@@ -51,6 +51,17 @@ scripts/           One-off and bootstrap scripts.
 `core` exists so the interesting logic is testable without a server or a browser.
 Both `api` and `web` consume it.
 
+The monorepo is scaffolded and runnable (Node 22 — see `.nvmrc` — via `corepack`,
+pnpm workspaces, Biome, Vitest). From the repo root:
+
+```
+pnpm install   # once per clone / after pulling dependency changes
+pnpm dev       # apps/api on :8787, apps/web on :5173, in parallel
+pnpm test      # vitest across all packages/apps
+pnpm build     # tsc + vite build across all packages/apps
+pnpm lint      # biome check
+```
+
 ### Provisional stack choices
 
 These are defaults, not commandments. Push back if you disagree — but say so
@@ -138,6 +149,9 @@ that the pilot types into Pilot 2 by hand.
 1. **The spike comes before the app.** Before building anything, prove we can get a
    plausible 4 m contour in Kiladha Bay with a throwaway script that dumps a GeoTIFF
    for inspection in QGIS. If SDB doesn't work there, the app is pointless.
+   **Status: done.** `scripts/spike-sdb-kiladha.mjs` produced a plausible contour,
+   checked against the Lambayanna structures in QGIS — see story 0.1 in
+   `docs/user-stories.md`. The monorepo scaffold above followed from this result.
 2. `packages/core` is pure and tested. If a function needs the network, it is in
    the wrong package.
 3. Secrets live in `apps/api` env only. Never commit CDSE credentials.

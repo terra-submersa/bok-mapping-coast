@@ -13,10 +13,13 @@ bay mouth to Lambayanna beach.
 
 ## Status
 
-Pre-implementation. Design settled, nothing built.
+Spike passed: `scripts/spike-sdb-kiladha.mjs` produced a plausible 4 m contour for
+Kiladha Bay, checked against the Lambayanna structures in QGIS (story 0.1).
 
-The next step is a spike: prove a plausible 4 m contour can be derived for Kiladha Bay
-before any application code is written.
+The monorepo is scaffolded and runnable (see [Getting started](#getting-started)),
+but the Walking Skeleton itself — AOI input, SDB request, threshold, simplify,
+KML export — is not yet built. See [`docs/user-stories.md`](docs/user-stories.md)
+for what's next.
 
 ## Documentation
 
@@ -26,7 +29,7 @@ before any application code is written.
 | [`docs/user-stories.md`](docs/user-stories.md) | The backlog — source of truth for intent |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | What was decided, why, and what it costs |
 
-## Planned layout
+## Layout
 
 ```
 packages/core      Pure geometry and mission logic. Zero I/O.
@@ -36,6 +39,16 @@ apps/web           MapLibre map, polygon editor, parameters.
 ```
 
 ## Getting started
+
+Requires Node 22+ (see `.nvmrc`) and `pnpm` (via `corepack enable`).
+
+```bash
+pnpm install
+pnpm dev     # apps/api on :8787, apps/web on :5173
+pnpm test
+pnpm build
+pnpm lint
+```
 
 ```bash
 ./scripts/bootstrap-github.sh   # labels, milestone, Walking Skeleton issues
