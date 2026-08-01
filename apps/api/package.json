@@ -1,0 +1,24 @@
+{
+  "name": "@bok/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bok/core": "workspace:*",
+    "@bok/dji": "workspace:*",
+    "@hono/node-server": "^2.0.12",
+    "hono": "^4.12.33"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
