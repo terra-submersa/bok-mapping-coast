@@ -1,0 +1,31 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# env & secrets — CDSE credentials must never be committed
+.env
+.env.*
+!.env.example
+
+# caches
+.cache/
+.turbo/
+coverage/
+
+# raster / spike artefacts
+*.tif
+*.tiff
+*.jp2
+data/
+tmp/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+.env
