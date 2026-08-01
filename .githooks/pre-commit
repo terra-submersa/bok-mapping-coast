@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# DevSecOps gate, run locally before it ever reaches CI.
+# Enabled via: git config core.hooksPath .githooks   (see scripts/setup-hooks.sh)
+#
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+# Refuse to commit an actual .env file, gitignore or not — belt and suspenders
+# against `git add -f`. CDSE credentials live in apps/api/.env; never in git.
+staged_env_files="$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)\.env$' || true)"
+if [[ -n "$staged_env_files" ]]; then
+  echo "✗ Refusing to commit .env file(s):" >&2
+  echo "$staged_env_files" | sed 's/^/    /' >&2
+  exit 1
+fi
+
+"$repo_root/scripts/devsecops/secret-scan.sh"

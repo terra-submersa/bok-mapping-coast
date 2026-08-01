@@ -39,7 +39,17 @@ apps/web           MapLibre map, polygon editor, parameters.
 
 ```bash
 ./scripts/bootstrap-github.sh   # labels, milestone, Walking Skeleton issues
+./scripts/setup-hooks.sh        # wire up local pre-commit / commit-msg hooks
 ```
 
-Requires an authenticated `gh` CLI. Run once — it will create duplicate issues if
-re-run.
+`bootstrap-github.sh` requires an authenticated `gh` CLI. Run once — it will create
+duplicate issues if re-run.
+
+## DevSecOps
+
+- `.github/workflows/devsecops.yml` runs on every push/PR to `main`: Conventional
+  Commits check on PR commits, secret scanning (gitleaks), CodeQL SAST, and
+  dependency review.
+- `./scripts/setup-hooks.sh` points git at `.githooks/` so the same commit-message
+  and secret-scan checks run locally, before a commit is made rather than after
+  it's pushed. Run it once per clone.

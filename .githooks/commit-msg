@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#
+# Enforce Conventional Commits locally, same rule CI applies to PR commits.
+# Enabled via: git config core.hooksPath .githooks   (see scripts/setup-hooks.sh)
+#
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+"$repo_root/scripts/devsecops/commit-msg-check.sh" "$1"

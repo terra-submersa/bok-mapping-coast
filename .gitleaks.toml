@@ -1,0 +1,14 @@
+title = "bok-mapping-coast gitleaks config"
+
+# Use gitleaks' built-in rule set as the baseline.
+[extend]
+useDefault = true
+
+[allowlist]
+  description = "Paths that structurally can't carry real secrets"
+  paths = [
+    '''\.env\.example$''',
+    '''\.tif$''',
+    '''\.tiff$''',
+    '''\.jp2$''',
+  ]

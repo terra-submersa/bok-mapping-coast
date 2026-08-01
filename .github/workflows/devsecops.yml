@@ -1,0 +1,83 @@
+name: DevSecOps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-messages:
+    name: Commit message lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate every commit in the PR follows Conventional Commits
+        run: |
+          set -euo pipefail
+          chmod +x scripts/devsecops/commit-msg-check.sh
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          status=0
+          while read -r sha; do
+            msg="$(git log -1 --format=%s "$sha")"
+            echo "-- $sha: $msg"
+            if ! scripts/devsecops/commit-msg-check.sh --string "$msg"; then
+              status=1
+            fi
+          done < <(git rev-list "$base..$head")
+          exit "$status"
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  codeql:
+    name: CodeQL (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for a dependency manifest
+        id: manifest
+        run: |
+          if git ls-files | grep -qE '(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$'; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/dependency-review-action@v4
+        if: steps.manifest.outputs.present == 'true'
