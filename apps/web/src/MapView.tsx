@@ -2,8 +2,11 @@ import {
   type BBox,
   bboxAreaKm2,
   checkProcessingApiLimit,
+  countVertices,
   type ProcessingApiLimitCheck,
   parseBboxInput,
+  type Range,
+  shallowWaterContour,
 } from "@bok/core";
 import {
   type GeoJSONSource,
@@ -20,6 +23,7 @@ import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
 import { type Composite, fetchComposite } from "./composite.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { renderComposite, waterRange } from "./depth-ramp.js";
+import { ThresholdPanel } from "./ThresholdPanel.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // Kiladha Bay, Argolic Gulf — same AOI as scripts/spike-sdb-kiladha.mjs.
@@ -29,6 +33,7 @@ const KILADHA_ZOOM = 14;
 const AOI_SOURCE_ID = "aoi";
 const DEPTH_SOURCE_ID = "depth";
 const DEPTH_LAYER_ID = "depth-raster";
+const CONTOUR_SOURCE_ID = "contour";
 
 /**
  * Satellite imagery, not a street basemap: story 2.3 exists so the Planner can
@@ -57,6 +62,16 @@ const DEFAULT_TO = "2025-09-15";
 
 function emptyFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   return { type: "FeatureCollection", features: [] };
+}
+
+/** MapLibre's GeoJSON source wants a Feature or FeatureCollection, not a bare geometry. */
+function contourFeature(
+  geometry: GeoJSON.MultiPolygon | null,
+): GeoJSON.FeatureCollection<GeoJSON.MultiPolygon> {
+  return {
+    type: "FeatureCollection",
+    features: geometry ? [{ type: "Feature", properties: {}, geometry }] : [],
+  };
 }
 
 function bboxToFeatureCollection(bbox: BBox): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
@@ -106,6 +121,8 @@ export function MapView() {
   const [loadingComposite, setLoadingComposite] = useState(false);
   const [compositeError, setCompositeError] = useState<string | null>(null);
   const [opacity, setOpacity] = useState(0.8);
+  const [ratioRange, setRatioRange] = useState<Range | null>(null);
+  const [threshold, setThreshold] = useState<number | null>(null);
 
   function showBbox(next: BBox | null) {
     setBboxState(next);
@@ -141,6 +158,8 @@ export function MapView() {
   function clearComposite() {
     setComposite(null);
     setCompositeError(null);
+    setRatioRange(null);
+    setThreshold(null);
     const map = mapRef.current;
     if (map?.getLayer(DEPTH_LAYER_ID)) map.removeLayer(DEPTH_LAYER_ID);
     if (map?.getSource(DEPTH_SOURCE_ID)) map.removeSource(DEPTH_SOURCE_ID);
@@ -156,6 +175,9 @@ export function MapView() {
       setCompositeError("The composite has no water pixels — check the AOI and the date range.");
       return;
     }
+    setRatioRange(range);
+    // Start mid-range: an arbitrary but visible starting point the Planner drags from.
+    setThreshold((current) => current ?? (range.min + range.max) / 2);
 
     const canvas = document.createElement("canvas");
     canvas.width = next.width;
@@ -221,7 +243,11 @@ export function MapView() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only setup; applyBbox/showBbox read refs, not state, so re-running on every render would be wrong
   useEffect(() => {
-    if (!containerRef.current) return;
+    // Created once and kept for the lifetime of the page. React StrictMode invokes
+    // this effect twice against the same container; tearing the map down and
+    // rebuilding it left two instances fighting over one canvas, with the visible
+    // one missing every source added during setup.
+    if (!containerRef.current || mapRef.current) return;
 
     const map = new MapLibreMap({
       container: containerRef.current,
@@ -248,7 +274,14 @@ export function MapView() {
       }
     });
 
-    map.on("load", () => {
+    // Driven by styledata rather than a one-shot "load" listener, and made
+    // idempotent by the getSource guard. React StrictMode mounts this effect
+    // twice against the same container, and "load" can fire on the instance that
+    // gets discarded — which previously left the surviving map with no AOI or
+    // contour sources at all, so setData silently did nothing.
+    const ensureOverlays = () => {
+      if (!map.isStyleLoaded() || map.getSource(AOI_SOURCE_ID)) return;
+
       map.addSource(AOI_SOURCE_ID, { type: "geojson", data: emptyFeatureCollection() });
       map.addLayer({
         id: "aoi-fill",
@@ -263,14 +296,28 @@ export function MapView() {
         paint: { "line-color": "#1e88e5", "line-width": 2 },
       });
 
+      map.addSource(CONTOUR_SOURCE_ID, { type: "geojson", data: contourFeature(null) });
+      map.addLayer({
+        id: "contour-fill",
+        type: "fill",
+        source: CONTOUR_SOURCE_ID,
+        paint: { "fill-color": "#ffd54f", "fill-opacity": 0.25 },
+      });
+      map.addLayer({
+        id: "contour-line",
+        type: "line",
+        source: CONTOUR_SOURCE_ID,
+        paint: { "line-color": "#ffb300", "line-width": 2 },
+      });
+
       const stored = loadStoredAoi();
       if (stored) showBbox(stored);
-    });
-
-    return () => {
-      draw.stop();
-      map.remove();
     };
+
+    // "load" is the normal path; "idle" is the safety net — it fires whenever the
+    // map has finished rendering, so the overlays land even if "load" was missed.
+    map.on("load", ensureOverlays);
+    map.on("idle", ensureOverlays);
   }, []);
 
   useEffect(() => {
@@ -279,6 +326,21 @@ export function MapView() {
       map.setPaintProperty(DEPTH_LAYER_ID, "raster-opacity", opacity);
     }
   }, [opacity]);
+
+  /**
+   * Recomputed synchronously as the slider moves. A Kiladha-sized grid contours in
+   * a few milliseconds, comfortably inside the story's 200 ms budget; if a much
+   * larger AOI ever makes this stutter, this is the thing to move off the main thread.
+   */
+  const contour = useMemo(() => {
+    if (!composite || threshold === null) return null;
+    return shallowWaterContour(composite, threshold);
+  }, [composite, threshold]);
+
+  useEffect(() => {
+    const source = mapRef.current?.getSource(CONTOUR_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(contourFeature(contour));
+  }, [contour]);
 
   const areaKm2 = useMemo(() => (bbox ? bboxAreaKm2(bbox) : null), [bbox]);
   const limitCheck: ProcessingApiLimitCheck | null = useMemo(
@@ -312,6 +374,15 @@ export function MapView() {
           opacity={opacity}
           onOpacityChange={setOpacity}
         />
+        {ratioRange && threshold !== null && (
+          <ThresholdPanel
+            range={ratioRange}
+            threshold={threshold}
+            onThresholdChange={setThreshold}
+            vertexCount={contour ? countVertices(contour) : 0}
+            ringCount={contour ? contour.coordinates.length : 0}
+          />
+        )}
       </div>
     </div>
   );

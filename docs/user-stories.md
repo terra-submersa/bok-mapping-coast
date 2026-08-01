@@ -120,12 +120,31 @@ a scene ruined by glint or a boat wake.
 
 ## Epic 3 — Calibrate and threshold `epic:calibration`
 
-### 3.1 Live threshold slider `todo` · **Walking Skeleton**
+### 3.1 Live threshold slider `done` · **Walking Skeleton**
 As a Planner, I can drag a threshold slider and watch the contour update live over
 imagery, so I can place the boundary by judgement.
 
 - Contour redraws under ~200 ms
 - Value shown as raw ratio, and as metres only once calibrated
+
+> **Done.** `shallowWaterContour` in core wraps `d3-contour`. Two things matter:
+> the ratio is negated because Stumpf increases with depth while d3 contours
+> *above* a value, and land is pushed to a large negative sentinel so a ratio of 0
+> is not read as the shallowest possible water and swallow the coastline.
+>
+> Kiladha contours in **~7 ms**; slider-to-redraw measured 17–59 ms, well inside
+> the 200 ms budget. Metres are refused outright until story 3.2 supplies ≥3
+> calibration points — the panel says so rather than staying silent.
+>
+> The contour traces the sand shelf around the islet and along Lambayanna beach,
+> which is the first end-to-end sanity check that the whole chain is right.
+
+> **Bug found and fixed here, dating back to 1.1:** no GeoJSON layer had ever
+> rendered. Vite's dependency pre-bundler mangles MapLibre's web worker, and
+> without that worker GeoJSON sources produce no tiles — while raster layers
+> still draw, so the map looked fine. `optimizeDeps.exclude: ["maplibre-gl"]`
+> fixes it. Story 1.1 was verified through the accessibility tree and state, not
+> pixels, which is exactly how this slipped through.
 
 ### 3.2 Drop known-depth reference points `todo`
 As a Planner, I can place reference points and enter their depth, so the app can fit

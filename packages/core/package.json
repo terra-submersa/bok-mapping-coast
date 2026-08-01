@@ -11,9 +11,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@turf/turf": "^7.3.5"
+    "@turf/turf": "^7.3.5",
+    "d3-contour": "^4.0.2"
   },
   "devDependencies": {
+    "@types/d3-contour": "^3.0.6",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
