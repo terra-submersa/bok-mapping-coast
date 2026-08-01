@@ -65,13 +65,27 @@ so I can choose a sensible date range.
 
 ## Epic 2 — Derive relative depth `epic:sdb`
 
-### 2.1 Request an SDB composite `todo` · **Walking Skeleton**
+### 2.1 Request an SDB composite `done` · **Walking Skeleton**
 As a Planner, I can request an SDB composite over a date range and get back a
 single-band relative-depth raster.
 
 - Land and cloud masked out (NDWI from B03/B08; SCL for cloud, shadow, cirrus)
 - Temporal **median** across all qualifying scenes
 - Result cached — the Processing API is metered
+
+> **Done.** `GET /api/composite?bbox=&from=&to=` returns a two-band FLOAT32 GeoTIFF
+> (band 1 median Stumpf ratio, band 2 scene count — 2.2's layer comes free).
+> Output is sized at native 10 m rather than the spike's fixed 1024², and the
+> request is rejected before it costs anything if it would exceed the 2500 px cap.
+>
+> The evalscript is unit tested by evaluating it against synthetic samples, so the
+> masking and the median are covered rather than assumed. Responses are cached to
+> disk keyed on bbox + range + evalscript version; concurrent requests for the same
+> composite collapse onto one upstream call.
+>
+> Verified against real CDSE: Kiladha 2025-06-01→09-15 returned 309×189 px,
+> pixel scale ≈10.0 m, in 12 s; the repeat request was a byte-identical cache hit
+> in 24 ms. Exactly one metered call.
 
 ### 2.2 See per-pixel scene count `todo`
 As a Planner, I can see how many scenes contributed to each pixel, so I can distrust
