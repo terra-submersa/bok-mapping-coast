@@ -35,6 +35,21 @@ app.route("/api", createCompositeRoutes({ get: (request) => getService().get(req
 
 const port = Number(process.env.PORT ?? 8787);
 
-serve({ fetch: app.fetch, port }, (info) => {
+const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`bok-mapping-coast api listening on http://localhost:${info.port}`);
+});
+
+/**
+ * Left alone, a taken port arrives as an unhandled 'error' event and a stack trace
+ * through node:net that names neither the port nor the cause — which is, nearly
+ * always, a second `pnpm dev` still running from another terminal or session.
+ */
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EADDRINUSE") throw error;
+  console.error(
+    `port ${port} is already in use — is another \`pnpm dev\` running?\n` +
+      `Find it with:  lsof -nP -iTCP:${port} -sTCP:LISTEN\n` +
+      `Or set PORT to start this API somewhere else.`,
+  );
+  process.exit(1);
 });
