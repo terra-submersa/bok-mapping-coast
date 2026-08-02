@@ -1,5 +1,7 @@
 import type { Composite } from "./composite.js";
 
+export type LayerView = "depth" | "sceneCount";
+
 export interface DepthPanelProps {
   hasAoi: boolean;
   from: string;
@@ -12,6 +14,8 @@ export interface DepthPanelProps {
   composite: Composite | null;
   opacity: number;
   onOpacityChange: (value: number) => void;
+  layerView: LayerView;
+  onLayerViewChange: (value: LayerView) => void;
 }
 
 /** Share of pixels backed by at least one scene — the rest is land, cloud, or nothing. */
@@ -39,6 +43,8 @@ export function DepthPanel({
   composite,
   opacity,
   onOpacityChange,
+  layerView,
+  onLayerViewChange,
 }: DepthPanelProps) {
   const stats = composite ? waterCoverage(composite) : null;
 
@@ -86,11 +92,43 @@ export function DepthPanel({
             </p>
           )}
 
-          <div className="ramp-legend">
-            <span>shallow</span>
-            <span className="bar" />
-            <span>deep</span>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              className={layerView === "depth" ? "toggle active" : "toggle"}
+              onClick={() => onLayerViewChange("depth")}
+            >
+              Depth
+            </button>
+            <button
+              type="button"
+              className={layerView === "sceneCount" ? "toggle active" : "toggle"}
+              onClick={() => onLayerViewChange("sceneCount")}
+            >
+              Scene count
+            </button>
           </div>
+
+          {layerView === "depth" ? (
+            <div className="ramp-legend">
+              <span>shallow</span>
+              <span className="bar" />
+              <span>deep</span>
+            </div>
+          ) : (
+            <>
+              <div className="ramp-legend">
+                <span>thin</span>
+                <span className="bar scene-count" />
+                <span>many</span>
+              </div>
+              <p className="hint">
+                Per-pixel count of scenes behind the median (story 2.2). Red areas are backed by one
+                or two scenes — a cloudy-scene artefact can look exactly like a real shallow shelf,
+                so distrust the contour there.
+              </p>
+            </>
+          )}
 
           <div className="field" style={{ marginTop: 8 }}>
             <label htmlFor="opacity">Opacity</label>

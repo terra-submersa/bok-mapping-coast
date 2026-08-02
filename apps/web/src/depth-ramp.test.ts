@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Composite } from "./composite.js";
-import { rampColour, renderCompositeRgba, waterRange } from "./depth-ramp.js";
+import {
+  rampColour,
+  renderCompositeRgba,
+  renderSceneCountRgba,
+  sceneCountRampColour,
+  sceneCountRange,
+  waterRange,
+} from "./depth-ramp.js";
 
 function composite(ratio: number[], sceneCount: number[]): Composite {
   return {
@@ -67,6 +74,45 @@ describe("renderCompositeRgba", () => {
   it("honours a minimum scene count, so thin data can be hidden", () => {
     const rgba = renderCompositeRgba(composite([1.5, 1.5], [2, 20]), range, { minSceneCount: 5 });
     expect(rgba[3]).toBe(0);
+    expect(rgba[7]).toBe(255);
+  });
+});
+
+describe("sceneCountRampColour", () => {
+  it("runs from a warning red at 0 to a reassuring green at 1", () => {
+    const [r0, g0] = sceneCountRampColour(0);
+    const [r1, g1] = sceneCountRampColour(1);
+    expect(r0).toBeGreaterThan(g0);
+    expect(g1).toBeGreaterThan(r1);
+  });
+});
+
+describe("sceneCountRange", () => {
+  it("ignores land pixels and uses the full min–max of water pixels", () => {
+    const range = sceneCountRange(composite([1, 1, 1, 1], [2, 8, 0, 0]));
+    expect(range).toEqual({ min: 2, max: 8 });
+  });
+
+  it("returns null when nothing is water", () => {
+    expect(sceneCountRange(composite([1, 1], [0, 0]))).toBeNull();
+  });
+});
+
+describe("renderSceneCountRgba", () => {
+  const range = { min: 1, max: 10 };
+
+  it("makes land pixels fully transparent", () => {
+    const rgba = renderSceneCountRgba(composite([1, 1], [5, 0]), range);
+    expect(rgba[3]).toBe(255);
+    expect(rgba[7]).toBe(0);
+  });
+
+  it("colours a thin pixel and a well-supported pixel differently and opaquely", () => {
+    const rgba = renderSceneCountRgba(composite([1, 1], [1, 10]), range);
+    const thin = [rgba[0], rgba[1], rgba[2]];
+    const solid = [rgba[4], rgba[5], rgba[6]];
+    expect(thin).not.toEqual(solid);
+    expect(rgba[3]).toBe(255);
     expect(rgba[7]).toBe(255);
   });
 });

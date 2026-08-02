@@ -107,3 +107,64 @@ body,
     rgb(10 26 62)
   );
 }
+
+.ramp-legend .bar.scene-count {
+  background: linear-gradient(
+    to right,
+    rgb(211 47 47),
+    rgb(255 179 0),
+    rgb(255 241 118),
+    rgb(129 199 132),
+    rgb(27 94 32)
+  );
+}
+
+.toggle {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  cursor: pointer;
+}
+
+.toggle.active {
+  background: var(--panel-accent);
+  border-color: var(--panel-accent);
+  color: #ffffff;
+}
+
+.ring-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.ring-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ring-item.active {
+  border-color: #ffb300;
+  background: rgb(255 179 0 / 12%);
+}

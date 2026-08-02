@@ -1,11 +1,14 @@
 import {
   type BBox,
   bboxAreaKm2,
+  bufferPolygon,
+  type ContourRing,
   checkProcessingApiLimit,
+  contourRings,
   countVertices,
+  findRingContaining,
   type ProcessingApiLimitCheck,
   parseBboxInput,
-  type Range,
   sameBbox,
   shallowWaterContour,
   simplifyContour,
@@ -22,10 +25,12 @@ import { TerraDraw, TerraDrawRectangleMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { AoiPanel } from "./AoiPanel.js";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
+import { BufferPanel } from "./BufferPanel.js";
 import { type Composite, fetchComposite } from "./composite.js";
-import { DepthPanel } from "./DepthPanel.js";
-import { renderComposite, waterRange } from "./depth-ramp.js";
+import { DepthPanel, type LayerView } from "./DepthPanel.js";
+import { renderComposite, renderSceneCount, sceneCountRange, waterRange } from "./depth-ramp.js";
 import { ExportPanel } from "./ExportPanel.js";
+import { RingPanel } from "./RingPanel.js";
 import { SimplifyPanel } from "./SimplifyPanel.js";
 import { ThresholdPanel } from "./ThresholdPanel.js";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -37,7 +42,8 @@ const KILADHA_ZOOM = 14;
 const AOI_SOURCE_ID = "aoi";
 const DEPTH_SOURCE_ID = "depth";
 const DEPTH_LAYER_ID = "depth-raster";
-const CONTOUR_SOURCE_ID = "contour";
+const RINGS_SOURCE_ID = "rings";
+const BOUNDARY_SOURCE_ID = "boundary";
 
 /**
  * Satellite imagery, not a street basemap: story 2.3 exists so the Planner can
@@ -64,17 +70,38 @@ const SATELLITE_STYLE: StyleSpecification = {
 const DEFAULT_FROM = "2025-06-01";
 const DEFAULT_TO = "2025-09-15";
 
+/** Buffer default sits inside the recommended 20-50 m window (story 4.3). */
+const DEFAULT_BUFFER_METRES = 30;
+
 function emptyFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   return { type: "FeatureCollection", features: [] };
 }
 
-/** MapLibre's GeoJSON source wants a Feature or FeatureCollection, not a bare geometry. */
-function contourFeature(
-  geometry: GeoJSON.MultiPolygon | null,
-): GeoJSON.FeatureCollection<GeoJSON.MultiPolygon> {
+/** Every candidate ring as its own feature, tagged so the selected one can be
+ * styled apart from the offshore noise (story 4.1). */
+function ringsFeatureCollection(
+  rings: ContourRing[],
+  selected: ContourRing | null,
+): GeoJSON.FeatureCollection<GeoJSON.Polygon, { selected: boolean }> {
   return {
     type: "FeatureCollection",
-    features: geometry ? [{ type: "Feature", properties: {}, geometry }] : [],
+    features: rings.map((ring) => ({
+      type: "Feature",
+      properties: { selected: ring === selected },
+      geometry: ring.polygon,
+    })),
+  };
+}
+
+function boundaryFeature(
+  polygon: GeoJSON.Polygon | null,
+): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  return {
+    type: "FeatureCollection",
+    features:
+      polygon && polygon.coordinates.length > 0
+        ? [{ type: "Feature", properties: {}, geometry: polygon }]
+        : [],
   };
 }
 
@@ -123,6 +150,7 @@ export function MapView() {
    */
   const bboxRef = useRef<BBox | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const isDrawingRef = useRef(false);
 
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
@@ -130,9 +158,19 @@ export function MapView() {
   const [loadingComposite, setLoadingComposite] = useState(false);
   const [compositeError, setCompositeError] = useState<string | null>(null);
   const [opacity, setOpacity] = useState(0.8);
-  const [ratioRange, setRatioRange] = useState<Range | null>(null);
+  const [layerView, setLayerView] = useState<LayerView>("depth");
+  const [ratioRange, setRatioRange] = useState<{ min: number; max: number } | null>(null);
   const [threshold, setThreshold] = useState<number | null>(null);
   const [tolerance, setTolerance] = useState(0);
+  const [bufferMetres, setBufferMetres] = useState(DEFAULT_BUFFER_METRES);
+
+  /**
+   * The point a Planner last picked, geographically — not a ring index, which
+   * has no stable meaning once the contour is rebuilt from scratch on a
+   * threshold change. Recomputed selection re-finds whichever new ring still
+   * contains this point (story 4.1's "survives a threshold change" criterion).
+   */
+  const [selectedAnchor, setSelectedAnchor] = useState<GeoJSON.Position | null>(null);
 
   function showBbox(next: BBox | null) {
     bboxRef.current = next;
@@ -178,29 +216,26 @@ export function MapView() {
     setCompositeError(null);
     setRatioRange(null);
     setThreshold(null);
+    setSelectedAnchor(null);
     const map = mapRef.current;
     if (map?.getLayer(DEPTH_LAYER_ID)) map.removeLayer(DEPTH_LAYER_ID);
     if (map?.getSource(DEPTH_SOURCE_ID)) map.removeSource(DEPTH_SOURCE_ID);
   }
 
-  /** Paints the composite into an image source pinned to its own bbox corners. */
-  function paintComposite(next: Composite) {
+  /** Paints the active layer (depth or scene count) into an image source pinned to its own bbox corners. */
+  function paintLayer(next: Composite, mode: LayerView) {
     const map = mapRef.current;
     if (!map) return;
 
-    const range = waterRange(next);
-    if (!range) {
-      setCompositeError("The composite has no water pixels — check the AOI and the date range.");
-      return;
-    }
-    setRatioRange(range);
-    // Start mid-range: an arbitrary but visible starting point the Planner drags from.
-    setThreshold((current) => current ?? (range.min + range.max) / 2);
+    const range = mode === "depth" ? waterRange(next) : sceneCountRange(next);
+    if (!range) return;
 
     const canvas = document.createElement("canvas");
     canvas.width = next.width;
     canvas.height = next.height;
-    canvas.getContext("2d")?.putImageData(renderComposite(next, range), 0, 0);
+    const imageData =
+      mode === "depth" ? renderComposite(next, range) : renderSceneCount(next, range);
+    canvas.getContext("2d")?.putImageData(imageData, 0, 0);
 
     const [minLon, minLat, maxLon, maxLat] = next.bbox;
     const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
@@ -235,8 +270,15 @@ export function MapView() {
     setCompositeError(null);
     try {
       const next = await fetchComposite({ bbox, from, to });
+      const range = waterRange(next);
+      if (!range) {
+        setCompositeError("The composite has no water pixels — check the AOI and the date range.");
+        return;
+      }
+      setRatioRange(range);
+      // Start mid-range: an arbitrary but visible starting point the Planner drags from.
+      setThreshold((current) => current ?? (range.min + range.max) / 2);
       setComposite(next);
-      paintComposite(next);
     } catch (err) {
       setCompositeError(err instanceof Error ? err.message : "Could not load the composite.");
     } finally {
@@ -314,18 +356,53 @@ export function MapView() {
         paint: { "line-color": "#1e88e5", "line-width": 2 },
       });
 
-      map.addSource(CONTOUR_SOURCE_ID, { type: "geojson", data: contourFeature(null) });
+      // All candidate rings, styled apart by the "selected" flag (story 4.1).
+      map.addSource(RINGS_SOURCE_ID, { type: "geojson", data: ringsFeatureCollection([], null) });
       map.addLayer({
-        id: "contour-fill",
+        id: "rings-fill",
         type: "fill",
-        source: CONTOUR_SOURCE_ID,
-        paint: { "fill-color": "#ffd54f", "fill-opacity": 0.25 },
+        source: RINGS_SOURCE_ID,
+        paint: {
+          "fill-color": ["case", ["get", "selected"], "#ffb300", "#9e9e9e"],
+          "fill-opacity": ["case", ["get", "selected"], 0.25, 0.12],
+        },
       });
       map.addLayer({
-        id: "contour-line",
+        id: "rings-outline",
         type: "line",
-        source: CONTOUR_SOURCE_ID,
-        paint: { "line-color": "#ffb300", "line-width": 2 },
+        source: RINGS_SOURCE_ID,
+        paint: {
+          "line-color": ["case", ["get", "selected"], "#ffb300", "#9e9e9e"],
+          "line-width": ["case", ["get", "selected"], 2, 1],
+        },
+      });
+
+      // The final flight boundary: selected ring, buffered, then simplified.
+      map.addSource(BOUNDARY_SOURCE_ID, { type: "geojson", data: boundaryFeature(null) });
+      map.addLayer({
+        id: "boundary-fill",
+        type: "fill",
+        source: BOUNDARY_SOURCE_ID,
+        paint: { "fill-color": "#2e7d32", "fill-opacity": 0.2 },
+      });
+      map.addLayer({
+        id: "boundary-line",
+        type: "line",
+        source: BOUNDARY_SOURCE_ID,
+        paint: { "line-color": "#2e7d32", "line-width": 3 },
+      });
+
+      map.on("mouseenter", "rings-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "rings-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
+      map.on("click", "rings-fill", (e) => {
+        if (isDrawingRef.current) return;
+        const point: GeoJSON.Position = [e.lngLat.lng, e.lngLat.lat];
+        const match = findRingContaining(ringsRef.current, point);
+        if (match) setSelectedAnchor(match.anchor);
       });
 
       const stored = loadStoredAoi();
@@ -339,11 +416,20 @@ export function MapView() {
   }, []);
 
   useEffect(() => {
+    isDrawingRef.current = isDrawing;
+  }, [isDrawing]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (map?.getLayer(DEPTH_LAYER_ID)) {
       map.setPaintProperty(DEPTH_LAYER_ID, "raster-opacity", opacity);
     }
   }, [opacity]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: paintLayer is redefined every render and reads opacity from render scope on purpose — see the opacity effect above for live opacity updates
+  useEffect(() => {
+    if (composite) paintLayer(composite, layerView);
+  }, [composite, layerView]);
 
   /**
    * Recomputed synchronously as the slider moves. A Kiladha-sized grid contours in
@@ -355,20 +441,67 @@ export function MapView() {
     return shallowWaterContour(composite, threshold);
   }, [composite, threshold]);
 
+  /** Every ring of the raw contour, largest first — the Planner's candidates (story 4.1). */
+  const rings = useMemo(() => (contour ? contourRings(contour) : []), [contour]);
+  const ringsRef = useRef<ContourRing[]>([]);
+  useEffect(() => {
+    ringsRef.current = rings;
+  }, [rings]);
+
+  /** The ring containing the last picked point, or the largest ring by default. */
+  const selectedRing = useMemo(() => {
+    if (rings.length === 0) return null;
+    if (selectedAnchor) {
+      const match = findRingContaining(rings, selectedAnchor);
+      if (match) return match;
+    }
+    return rings[0];
+  }, [rings, selectedAnchor]);
+
+  // Keeps the tracked point pinned to whichever ring ends up selected, so the
+  // *next* threshold change matches against this ring's current shape rather
+  // than an increasingly stale click position.
+  useEffect(() => {
+    if (selectedRing) setSelectedAnchor(selectedRing.anchor);
+  }, [selectedRing]);
+
   /**
-   * Simplification is derived, never applied in place: `contour` stays at full
-   * resolution so dragging the tolerance back restores every vertex (story 4.2's
-   * non-destructive requirement).
+   * Grown outward so flight lines reach past the raw contour and catch
+   * shoreline features — SfM has no tie points over open water (story 4.3).
+   * Derived, never applied in place: `selectedRing` stays unbuffered so
+   * dragging the distance back to 0 restores it exactly.
    */
-  const simplified = useMemo(
-    () => (contour ? simplifyContour(contour, tolerance) : null),
-    [contour, tolerance],
+  const bufferedPolygon = useMemo(
+    () => (selectedRing ? bufferPolygon(selectedRing.polygon, bufferMetres) : null),
+    [selectedRing, bufferMetres],
+  );
+
+  const bufferedRingInfo = useMemo(() => {
+    if (!bufferedPolygon || bufferedPolygon.coordinates.length === 0) return null;
+    return (
+      contourRings({ type: "MultiPolygon", coordinates: [bufferedPolygon.coordinates] })[0] ?? null
+    );
+  }, [bufferedPolygon]);
+
+  /**
+   * Simplification is derived, never applied in place: `bufferedPolygon` stays
+   * at full resolution so dragging the tolerance back restores every vertex
+   * (story 4.2's non-destructive requirement).
+   */
+  const boundary = useMemo(
+    () => (bufferedPolygon ? simplifyContour(bufferedPolygon, tolerance) : null),
+    [bufferedPolygon, tolerance],
   );
 
   useEffect(() => {
-    const source = mapRef.current?.getSource(CONTOUR_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(contourFeature(simplified));
-  }, [simplified]);
+    const source = mapRef.current?.getSource(RINGS_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(ringsFeatureCollection(rings, selectedRing));
+  }, [rings, selectedRing]);
+
+  useEffect(() => {
+    const source = mapRef.current?.getSource(BOUNDARY_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(boundaryFeature(boundary));
+  }, [boundary]);
 
   const areaKm2 = useMemo(() => (bbox ? bboxAreaKm2(bbox) : null), [bbox]);
   const limitCheck: ProcessingApiLimitCheck | null = useMemo(
@@ -401,6 +534,8 @@ export function MapView() {
           composite={composite}
           opacity={opacity}
           onOpacityChange={setOpacity}
+          layerView={layerView}
+          onLayerViewChange={setLayerView}
         />
         {ratioRange && threshold !== null && (
           <ThresholdPanel
@@ -411,23 +546,40 @@ export function MapView() {
             ringCount={contour ? contour.coordinates.length : 0}
           />
         )}
-        {contour && simplified && (
-          <SimplifyPanel
-            tolerance={tolerance}
-            onToleranceChange={setTolerance}
-            originalVertices={countVertices(contour)}
-            simplifiedVertices={countVertices(simplified)}
-            ringCount={simplified.coordinates.length}
+        {rings.length > 0 && (
+          <RingPanel
+            rings={rings}
+            selectedRing={selectedRing}
+            onSelect={(ring) => setSelectedAnchor(ring.anchor)}
           />
         )}
-        {simplified && threshold !== null && simplified.coordinates.length > 0 && (
-          <ExportPanel
-            contour={simplified}
-            threshold={threshold}
-            tolerance={tolerance}
-            from={from}
-            to={to}
-          />
+        {selectedRing && threshold !== null && (
+          <>
+            <BufferPanel
+              metres={bufferMetres}
+              onMetresChange={setBufferMetres}
+              beforeVertices={selectedRing.vertexCount}
+              beforeAreaM2={selectedRing.areaM2}
+              afterVertices={bufferedRingInfo?.vertexCount ?? 0}
+              afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
+            />
+            <SimplifyPanel
+              tolerance={tolerance}
+              onToleranceChange={setTolerance}
+              originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
+              simplifiedVertices={boundary ? countVertices(boundary) : 0}
+              ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
+            />
+            <ExportPanel
+              boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
+              otherRingCount={Math.max(rings.length - 1, 0)}
+              threshold={threshold}
+              tolerance={tolerance}
+              bufferMetres={bufferMetres}
+              from={from}
+              to={to}
+            />
+          </>
         )}
       </div>
     </div>

@@ -1,11 +1,15 @@
-import { countVertices, largestRing } from "@bok/core";
+import { countVertices } from "@bok/core";
 import { boundaryKml } from "@bok/dji";
 
 export interface ExportPanelProps {
-  contour: GeoJSON.MultiPolygon;
-  /** Provenance to write into the KML description. */
+  /** Final flight boundary: selected ring, buffered, then simplified. Null if
+   * the selected ring collapsed under simplification. */
+  boundary: GeoJSON.Polygon | null;
+  /** Other candidate rings not exported — see the ring selection panel. */
+  otherRingCount: number;
   threshold: number;
   tolerance: number;
+  bufferMetres: number;
   from: string;
   to: string;
 }
@@ -21,10 +25,15 @@ function downloadKml(filename: string, kml: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ExportPanel({ contour, threshold, tolerance, from, to }: ExportPanelProps) {
-  const boundary = largestRing(contour);
-  const droppedRings = contour.coordinates.length - (boundary ? 1 : 0);
-
+export function ExportPanel({
+  boundary,
+  otherRingCount,
+  threshold,
+  tolerance,
+  bufferMetres,
+  from,
+  to,
+}: ExportPanelProps) {
   function handleExport() {
     if (!boundary) return;
     downloadKml(
@@ -34,6 +43,7 @@ export function ExportPanel({ contour, threshold, tolerance, from, to }: ExportP
         description:
           `Sentinel-2 SDB composite ${from} to ${to}; ` +
           `Stumpf ratio threshold ${threshold.toFixed(4)}; ` +
+          `buffered ${bufferMetres} m landward; ` +
           `simplified at ${tolerance} m. Relative depth, not calibrated to metres.`,
       }),
     );
@@ -50,17 +60,18 @@ export function ExportPanel({ contour, threshold, tolerance, from, to }: ExportP
       <div className="stat">
         {boundary ? (
           <div>
-            Largest ring: {countVertices(boundary).toLocaleString()} vertices
-            {droppedRings > 0 &&
-              ` · ${droppedRings} smaller ring${droppedRings === 1 ? "" : "s"} dropped`}
+            {countVertices(boundary).toLocaleString()} vertices
+            {otherRingCount > 0 &&
+              ` · ${otherRingCount} other ring${otherRingCount === 1 ? "" : "s"} not exported`}
           </div>
         ) : (
-          <p className="error">No ring large enough to export.</p>
+          <p className="error">
+            The selected ring collapsed under simplification — lower the tolerance.
+          </p>
         )}
 
         <p className="hint">
-          Pilot 2 takes one simple polygon, so only the largest ring is exported and holes are
-          dropped. Choosing a different ring is story 4.1.
+          Pilot 2 takes one simple polygon: the ring chosen above, buffered, then simplified.
         </p>
         <p className="error">
           Not yet flown. This KML is written from the OGC spec, not from a Pilot 2 export — it must

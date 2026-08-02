@@ -33,7 +33,23 @@ function cloneMultiPolygon(geometry: GeoJSON.MultiPolygon): GeoJSON.MultiPolygon
 export function simplifyContour(
   geometry: GeoJSON.MultiPolygon,
   toleranceMetres: number,
-): GeoJSON.MultiPolygon {
+): GeoJSON.MultiPolygon;
+export function simplifyContour(
+  geometry: GeoJSON.Polygon,
+  toleranceMetres: number,
+): GeoJSON.Polygon;
+export function simplifyContour(
+  geometry: GeoJSON.MultiPolygon | GeoJSON.Polygon,
+  toleranceMetres: number,
+): GeoJSON.MultiPolygon | GeoJSON.Polygon {
+  if (geometry.type === "Polygon") {
+    const asMulti = simplifyContour(
+      { type: "MultiPolygon", coordinates: [geometry.coordinates] },
+      toleranceMetres,
+    );
+    return { type: "Polygon", coordinates: asMulti.coordinates[0] ?? [] };
+  }
+
   if (toleranceMetres <= 0 || geometry.coordinates.length === 0) {
     return cloneMultiPolygon(geometry);
   }

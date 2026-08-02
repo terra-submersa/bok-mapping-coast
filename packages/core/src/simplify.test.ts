@@ -66,4 +66,21 @@ describe("simplifyContour", () => {
   it("handles an empty contour", () => {
     expect(simplifyContour({ type: "MultiPolygon", coordinates: [] }, 25).coordinates).toEqual([]);
   });
+
+  it("accepts a single Polygon and returns a Polygon", () => {
+    const [ring] = noisyRing(500).coordinates;
+    const original: GeoJSON.Polygon = { type: "Polygon", coordinates: ring };
+    const simplified = simplifyContour(original, 20);
+    expect(simplified.type).toBe("Polygon");
+    expect(countVertices(simplified)).toBeLessThan(countVertices(original));
+  });
+
+  it("drops a Polygon ring that collapses below a valid ring rather than emitting it invalid", () => {
+    const [ring] = noisyRing(50).coordinates;
+    const original: GeoJSON.Polygon = { type: "Polygon", coordinates: ring };
+    const simplified = simplifyContour(original, 100_000);
+    if (simplified.coordinates.length > 0) {
+      expect(simplified.coordinates[0].length).toBeGreaterThanOrEqual(4);
+    }
+  });
 });
