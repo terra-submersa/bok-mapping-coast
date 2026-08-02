@@ -4,15 +4,18 @@ import {
   bufferPolygon,
   type ContourRing,
   checkProcessingApiLimit,
+  coastalRibbon,
   contourRings,
   countVertices,
   findRingContaining,
+  landMask,
   MIN_RING_AREA_M2,
   type ProcessingApiLimitCheck,
   parseBboxInput,
   sameBbox,
   shallowWaterContour,
   simplifyContour,
+  unionPolygons,
 } from "@bok/core";
 import {
   type GeoJSONSource,
@@ -75,6 +78,9 @@ const DEFAULT_TO = "2025-09-15";
 
 /** Buffer default sits inside the recommended 20-50 m window (story 4.3). */
 const DEFAULT_BUFFER_METRES = 30;
+
+/** Coastal ribbon default — same order of magnitude as the landward buffer (issue #27). */
+const DEFAULT_COAST_METRES = 30;
 
 function emptyFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   return { type: "FeatureCollection", features: [] };
@@ -170,6 +176,9 @@ export function MapView() {
   const [tolerance, setTolerance] = useState(() => loadStoredNumber("tolerance", 0));
   const [bufferMetres, setBufferMetres] = useState(() =>
     loadStoredNumber("bufferMetres", DEFAULT_BUFFER_METRES),
+  );
+  const [coastMetres, setCoastMetres] = useState(() =>
+    loadStoredNumber("coastMetres", DEFAULT_COAST_METRES),
   );
   const [minRingAreaM2, setMinRingAreaM2] = useState(() =>
     loadStoredNumber("minRingAreaM2", MIN_RING_AREA_M2),
@@ -445,6 +454,7 @@ export function MapView() {
 
   useEffect(() => storeNumber("tolerance", tolerance), [tolerance]);
   useEffect(() => storeNumber("bufferMetres", bufferMetres), [bufferMetres]);
+  useEffect(() => storeNumber("coastMetres", coastMetres), [coastMetres]);
   useEffect(() => storeNumber("minRingAreaM2", minRingAreaM2), [minRingAreaM2]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paintLayer is redefined every render and reads opacity from render scope on purpose — see the opacity effect above for live opacity updates
@@ -508,13 +518,38 @@ export function MapView() {
   }, [bufferedPolygon]);
 
   /**
-   * Simplification is derived, never applied in place: `bufferedPolygon` stays
+   * The composite's land/no-data mask, standing in for a coastline since the
+   * repo has no coastline data source (issue #27).
+   */
+  const land = useMemo(() => (composite ? landMask(composite) : null), [composite]);
+
+  /**
+   * A continuous strip along the whole coastline out to `coastMetres`,
+   * guaranteeing near-shore coverage even where the depth contour has a gap.
+   */
+  const ribbon = useMemo(
+    () => (land ? coastalRibbon(land, coastMetres) : null),
+    [land, coastMetres],
+  );
+
+  /**
+   * The depth-contour ring and the coastal ribbon, merged into the one simple
+   * polygon Pilot 2 needs. Derived, never applied in place, same as the
+   * buffer step above.
+   */
+  const mergedPolygon = useMemo(() => {
+    if (!bufferedPolygon) return null;
+    return ribbon ? unionPolygons(bufferedPolygon, ribbon) : bufferedPolygon;
+  }, [bufferedPolygon, ribbon]);
+
+  /**
+   * Simplification is derived, never applied in place: `mergedPolygon` stays
    * at full resolution so dragging the tolerance back restores every vertex
    * (story 4.2's non-destructive requirement).
    */
   const boundary = useMemo(
-    () => (bufferedPolygon ? simplifyContour(bufferedPolygon, tolerance) : null),
-    [bufferedPolygon, tolerance],
+    () => (mergedPolygon ? simplifyContour(mergedPolygon, tolerance) : null),
+    [mergedPolygon, tolerance],
   );
 
   useEffect(() => {
@@ -571,6 +606,8 @@ export function MapView() {
               onThresholdChange={setThreshold}
               vertexCount={rings.reduce((sum, ring) => sum + ring.vertexCount, 0)}
               ringCount={rings.length}
+              coastMetres={coastMetres}
+              onCoastMetresChange={setCoastMetres}
             />
           )}
           {rings.length > 0 && (
@@ -598,7 +635,7 @@ export function MapView() {
               survivingRingCount={rings.length}
               tolerance={tolerance}
               onToleranceChange={setTolerance}
-              originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
+              originalVertices={mergedPolygon ? countVertices(mergedPolygon) : 0}
               simplifiedVertices={boundary ? countVertices(boundary) : 0}
               ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
             />
@@ -610,6 +647,7 @@ export function MapView() {
               threshold={threshold}
               tolerance={tolerance}
               bufferMetres={bufferMetres}
+              coastMetres={coastMetres}
               from={from}
               to={to}
             />

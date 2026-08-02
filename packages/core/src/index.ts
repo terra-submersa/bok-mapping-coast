@@ -2,12 +2,15 @@ export type { BBox } from "./bbox.js";
 export { bboxAreaKm2, sameBbox } from "./bbox.js";
 export { parseBboxInput } from "./bbox-input.js";
 export { bufferPolygon } from "./buffer.js";
+export { coastalRibbon, landMask } from "./coastline.js";
 export {
   type ContourOptions,
   countVertices,
+  gridToLonLat,
   type RatioGrid,
   shallowWaterContour,
 } from "./contour.js";
+export { unionPolygons } from "./merge.js";
 export {
   checkProcessingApiLimit,
   PROCESSING_API_MAX_SIDE_PX,

@@ -11,6 +11,7 @@ export interface ExportPanelProps {
   threshold: number;
   tolerance: number;
   bufferMetres: number;
+  coastMetres: number;
   from: string;
   to: string;
 }
@@ -32,6 +33,7 @@ export function ExportPanel({
   threshold,
   tolerance,
   bufferMetres,
+  coastMetres,
   from,
   to,
 }: ExportPanelProps) {
@@ -45,6 +47,7 @@ export function ExportPanel({
           `Sentinel-2 SDB composite ${from} to ${to}; ` +
           `Stumpf ratio threshold ${threshold.toFixed(4)}; ` +
           `buffered ${bufferMetres} m landward; ` +
+          `unioned with a ${coastMetres} m coastal ribbon; ` +
           `simplified at ${tolerance} m. Relative depth, not calibrated to metres.`,
       }),
     );

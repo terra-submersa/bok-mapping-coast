@@ -57,7 +57,7 @@ export function shallowWaterContour(
 }
 
 /** Grid coordinates to lon/lat. Row 0 is the north edge, so latitude decreases with y. */
-function gridToLonLat(x: number, y: number, grid: RatioGrid): [number, number] {
+export function gridToLonLat(x: number, y: number, grid: RatioGrid): [number, number] {
   const [minLon, minLat, maxLon, maxLat] = grid.bbox;
   return [
     minLon + (x / grid.width) * (maxLon - minLon),
