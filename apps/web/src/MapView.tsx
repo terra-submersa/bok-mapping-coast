@@ -4,6 +4,7 @@ import {
   bufferPolygon,
   type ContourRing,
   checkProcessingApiLimit,
+  clipToBbox,
   coastalRibbon,
   contourRings,
   countVertices,
@@ -576,13 +577,25 @@ export function MapView() {
   }, [bufferedPolygon, ribbon]);
 
   /**
-   * Simplification is derived, never applied in place: `mergedPolygon` stays
+   * The buffer and coastal-ribbon steps grow geometry outward in unbounded
+   * space, so wherever the raw contour or land mask touches the AOI's edge,
+   * the grown result juts past it (issue #29). Clipping back to the AOI here
+   * — after the union, equivalent to clipping each side beforehand — restores
+   * that edge as the boundary's hard limit.
+   */
+  const clippedPolygon = useMemo(() => {
+    if (!mergedPolygon || !bbox) return mergedPolygon;
+    return clipToBbox(mergedPolygon, bbox);
+  }, [mergedPolygon, bbox]);
+
+  /**
+   * Simplification is derived, never applied in place: `clippedPolygon` stays
    * at full resolution so dragging the tolerance back restores every vertex
    * (story 4.2's non-destructive requirement).
    */
   const boundary = useMemo(
-    () => (mergedPolygon ? simplifyContour(mergedPolygon, tolerance) : null),
-    [mergedPolygon, tolerance],
+    () => (clippedPolygon ? simplifyContour(clippedPolygon, tolerance) : null),
+    [clippedPolygon, tolerance],
   );
 
   useEffect(() => {

@@ -2,6 +2,7 @@ export type { BBox } from "./bbox.js";
 export { bboxAreaKm2, sameBbox } from "./bbox.js";
 export { parseBboxInput } from "./bbox-input.js";
 export { bufferPolygon } from "./buffer.js";
+export { clipToBbox } from "./clip.js";
 export { coastalRibbon, landMask } from "./coastline.js";
 export {
   type ContourOptions,
