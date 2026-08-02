@@ -1,3 +1,4 @@
+import { CollapsibleSection } from "./CollapsibleSection.js";
 import { formatAreaM2 } from "./format.js";
 
 export interface BufferPanelProps {
@@ -18,9 +19,7 @@ export function BufferPanel({
   afterAreaM2,
 }: BufferPanelProps) {
   return (
-    <section className="panel">
-      <h2>Landward buffer</h2>
-
+    <CollapsibleSection id="buffer" title="Landward buffer">
       <div className="field">
         <label htmlFor="buffer">Buffer: {metres} m</label>
         <input
@@ -51,6 +50,6 @@ export function BufferPanel({
           Non-destructive: the unbuffered ring is kept, so dragging back to 0 m restores it exactly.
         </p>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }

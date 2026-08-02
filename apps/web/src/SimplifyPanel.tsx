@@ -1,4 +1,5 @@
 import { PILOT2_VERTEX_CEILING } from "@bok/core";
+import { CollapsibleSection } from "./CollapsibleSection.js";
 
 export interface SimplifyPanelProps {
   minRingAreaM2: number;
@@ -28,9 +29,7 @@ export function SimplifyPanel({
     originalVertices > 0 ? Math.round((1 - simplifiedVertices / originalVertices) * 100) : 0;
 
   return (
-    <section className="panel">
-      <h2>Simplify</h2>
-
+    <CollapsibleSection id="simplify" title="Simplify">
       <div className="field">
         <label htmlFor="min-ring-area">Minimum ring area: {minRingAreaM2} m²</label>
         <input
@@ -85,6 +84,6 @@ export function SimplifyPanel({
           every vertex.
         </p>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }

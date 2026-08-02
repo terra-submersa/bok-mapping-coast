@@ -1,4 +1,5 @@
 import type { Range } from "@bok/core";
+import { CollapsibleSection } from "./CollapsibleSection.js";
 
 export interface ThresholdPanelProps {
   range: Range;
@@ -16,9 +17,7 @@ export function ThresholdPanel({
   ringCount,
 }: ThresholdPanelProps) {
   return (
-    <section className="panel">
-      <h2>Shallow-water threshold</h2>
-
+    <CollapsibleSection id="threshold" title="Shallow-water threshold">
       <input
         type="range"
         min={range.min}
@@ -45,6 +44,6 @@ export function ThresholdPanel({
           until then this is the raw band ratio.
         </p>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }

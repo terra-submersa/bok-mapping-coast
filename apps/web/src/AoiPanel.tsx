@@ -1,5 +1,6 @@
 import type { BBox, ProcessingApiLimitCheck } from "@bok/core";
 import { useState } from "react";
+import { CollapsibleSection } from "./CollapsibleSection.js";
 
 interface AoiPanelProps {
   bbox: BBox | null;
@@ -30,9 +31,7 @@ export function AoiPanel({
   }
 
   return (
-    <section className="panel">
-      <h2>Area of interest</h2>
-
+    <CollapsibleSection id="aoi" title="Area of interest">
       <div className="row">
         <button type="button" onClick={onStartDraw} disabled={isDrawing}>
           {isDrawing ? "Drawing… click and drag" : "Draw AOI"}
@@ -69,6 +68,6 @@ export function AoiPanel({
           )}
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }

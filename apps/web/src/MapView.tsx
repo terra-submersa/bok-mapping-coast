@@ -24,6 +24,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TerraDraw, TerraDrawRectangleMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
+import { AccordionContext } from "./AccordionContext.js";
 import { AoiPanel } from "./AoiPanel.js";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
 import { BufferPanel } from "./BufferPanel.js";
@@ -174,6 +175,9 @@ export function MapView() {
    */
   const [selectedAnchor, setSelectedAnchor] = useState<GeoJSON.Position | null>(null);
 
+  /** Which sidebar section is expanded — exactly one at a time, "aoi" on load. */
+  const [activeSection, setActiveSection] = useState("aoi");
+
   function showBbox(next: BBox | null) {
     bboxRef.current = next;
     setBboxState(next);
@@ -219,6 +223,9 @@ export function MapView() {
     setRatioRange(null);
     setThreshold(null);
     setSelectedAnchor(null);
+    // The later sections this invalidates are about to unmount — fall back to
+    // the first one rather than leaving the accordion pointed at nothing.
+    setActiveSection("aoi");
     const map = mapRef.current;
     if (map?.getLayer(DEPTH_LAYER_ID)) map.removeLayer(DEPTH_LAYER_ID);
     if (map?.getSource(DEPTH_SOURCE_ID)) map.removeSource(DEPTH_SOURCE_ID);
@@ -518,80 +525,84 @@ export function MapView() {
     <div style={{ position: "absolute", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       <div className="sidebar">
-        <AoiPanel
-          bbox={bbox}
-          areaKm2={areaKm2}
-          limitCheck={limitCheck}
-          isDrawing={isDrawing}
-          onStartDraw={handleStartDraw}
-          onClear={handleClear}
-          onPasteApply={handlePasteApply}
-        />
-        <DepthPanel
-          hasAoi={bbox !== null}
-          from={from}
-          to={to}
-          onFromChange={setFrom}
-          onToChange={setTo}
-          onLoad={handleLoadComposite}
-          loading={loadingComposite}
-          error={compositeError}
-          composite={composite}
-          opacity={opacity}
-          onOpacityChange={setOpacity}
-          layerView={layerView}
-          onLayerViewChange={setLayerView}
-        />
-        {ratioRange && threshold !== null && (
-          <ThresholdPanel
-            range={ratioRange}
-            threshold={threshold}
-            onThresholdChange={setThreshold}
-            vertexCount={rings.reduce((sum, ring) => sum + ring.vertexCount, 0)}
-            ringCount={rings.length}
+        <AccordionContext.Provider
+          value={{ activeId: activeSection, setActiveId: setActiveSection }}
+        >
+          <AoiPanel
+            bbox={bbox}
+            areaKm2={areaKm2}
+            limitCheck={limitCheck}
+            isDrawing={isDrawing}
+            onStartDraw={handleStartDraw}
+            onClear={handleClear}
+            onPasteApply={handlePasteApply}
           />
-        )}
-        {rings.length > 0 && (
-          <RingPanel
-            rings={rings}
-            selectedRing={selectedRing}
-            onSelect={(ring) => setSelectedAnchor(ring.anchor)}
-          />
-        )}
-        {selectedRing && threshold !== null && (
-          <BufferPanel
-            metres={bufferMetres}
-            onMetresChange={setBufferMetres}
-            beforeVertices={selectedRing.vertexCount}
-            beforeAreaM2={selectedRing.areaM2}
-            afterVertices={bufferedRingInfo?.vertexCount ?? 0}
-            afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
-          />
-        )}
-        {threshold !== null && (
-          <SimplifyPanel
-            minRingAreaM2={minRingAreaM2}
-            onMinRingAreaM2Change={setMinRingAreaM2}
-            candidateRingCount={contour ? contour.coordinates.length : 0}
-            survivingRingCount={rings.length}
-            tolerance={tolerance}
-            onToleranceChange={setTolerance}
-            originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
-            simplifiedVertices={boundary ? countVertices(boundary) : 0}
-            ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
-          />
-        )}
-        {selectedRing && threshold !== null && (
-          <ExportPanel
-            boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
-            otherRingCount={Math.max(rings.length - 1, 0)}
-            threshold={threshold}
-            tolerance={tolerance}
-            bufferMetres={bufferMetres}
+          <DepthPanel
+            hasAoi={bbox !== null}
             from={from}
             to={to}
+            onFromChange={setFrom}
+            onToChange={setTo}
+            onLoad={handleLoadComposite}
+            loading={loadingComposite}
+            error={compositeError}
+            composite={composite}
+            opacity={opacity}
+            onOpacityChange={setOpacity}
+            layerView={layerView}
+            onLayerViewChange={setLayerView}
           />
-        )}
+          {ratioRange && threshold !== null && (
+            <ThresholdPanel
+              range={ratioRange}
+              threshold={threshold}
+              onThresholdChange={setThreshold}
+              vertexCount={rings.reduce((sum, ring) => sum + ring.vertexCount, 0)}
+              ringCount={rings.length}
+            />
+          )}
+          {rings.length > 0 && (
+            <RingPanel
+              rings={rings}
+              selectedRing={selectedRing}
+              onSelect={(ring) => setSelectedAnchor(ring.anchor)}
+            />
+          )}
+          {selectedRing && threshold !== null && (
+            <BufferPanel
+              metres={bufferMetres}
+              onMetresChange={setBufferMetres}
+              beforeVertices={selectedRing.vertexCount}
+              beforeAreaM2={selectedRing.areaM2}
+              afterVertices={bufferedRingInfo?.vertexCount ?? 0}
+              afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
+            />
+          )}
+          {threshold !== null && (
+            <SimplifyPanel
+              minRingAreaM2={minRingAreaM2}
+              onMinRingAreaM2Change={setMinRingAreaM2}
+              candidateRingCount={contour ? contour.coordinates.length : 0}
+              survivingRingCount={rings.length}
+              tolerance={tolerance}
+              onToleranceChange={setTolerance}
+              originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
+              simplifiedVertices={boundary ? countVertices(boundary) : 0}
+              ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
+            />
+          )}
+          {selectedRing && threshold !== null && (
+            <ExportPanel
+              boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
+              otherRingCount={Math.max(rings.length - 1, 0)}
+              threshold={threshold}
+              tolerance={tolerance}
+              bufferMetres={bufferMetres}
+              from={from}
+              to={to}
+            />
+          )}
+        </AccordionContext.Provider>
       </div>
     </div>
   );

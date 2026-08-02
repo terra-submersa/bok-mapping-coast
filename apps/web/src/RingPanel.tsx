@@ -1,4 +1,5 @@
 import type { ContourRing } from "@bok/core";
+import { CollapsibleSection } from "./CollapsibleSection.js";
 import { formatAreaM2 } from "./format.js";
 
 export interface RingPanelProps {
@@ -16,9 +17,7 @@ export function RingPanel({ rings, selectedRing, onSelect }: RingPanelProps) {
   const hiddenCount = rings.length - listed.length;
 
   return (
-    <section className="panel">
-      <h2>Ring selection</h2>
-
+    <CollapsibleSection id="rings" title="Ring selection">
       <p className="hint">
         A raster contour is many rings — one real survey area plus offshore noise. Pick the one that
         is the flight area; click a ring on the map or a row below.
@@ -52,6 +51,6 @@ export function RingPanel({ rings, selectedRing, onSelect }: RingPanelProps) {
           to select one of those instead.
         </p>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }

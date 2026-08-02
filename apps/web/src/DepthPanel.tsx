@@ -1,3 +1,4 @@
+import { CollapsibleSection } from "./CollapsibleSection.js";
 import type { Composite } from "./composite.js";
 
 export type LayerView = "depth" | "sceneCount";
@@ -49,9 +50,7 @@ export function DepthPanel({
   const stats = composite ? waterCoverage(composite) : null;
 
   return (
-    <section className="panel">
-      <h2>Relative depth</h2>
-
+    <CollapsibleSection id="depth" title="Relative depth">
       <div className="row">
         <div className="field">
           <label htmlFor="from">From</label>
@@ -144,6 +143,6 @@ export function DepthPanel({
           </div>
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }

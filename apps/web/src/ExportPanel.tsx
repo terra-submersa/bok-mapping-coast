@@ -1,5 +1,6 @@
 import { countVertices } from "@bok/core";
 import { boundaryKml } from "@bok/dji";
+import { CollapsibleSection } from "./CollapsibleSection.js";
 
 export interface ExportPanelProps {
   /** Final flight boundary: selected ring, buffered, then simplified. Null if
@@ -50,9 +51,7 @@ export function ExportPanel({
   }
 
   return (
-    <section className="panel">
-      <h2>Export</h2>
-
+    <CollapsibleSection id="export" title="Export">
       <button type="button" onClick={handleExport} disabled={!boundary}>
         Download boundary KML
       </button>
@@ -78,6 +77,6 @@ export function ExportPanel({
           be round-tripped on the actual RC before you rely on it in the field.
         </p>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
