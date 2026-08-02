@@ -7,6 +7,7 @@ import {
   contourRings,
   countVertices,
   findRingContaining,
+  MIN_RING_AREA_M2,
   type ProcessingApiLimitCheck,
   parseBboxInput,
   sameBbox,
@@ -163,6 +164,7 @@ export function MapView() {
   const [threshold, setThreshold] = useState<number | null>(null);
   const [tolerance, setTolerance] = useState(0);
   const [bufferMetres, setBufferMetres] = useState(DEFAULT_BUFFER_METRES);
+  const [minRingAreaM2, setMinRingAreaM2] = useState(MIN_RING_AREA_M2);
 
   /**
    * The point a Planner last picked, geographically — not a ring index, which
@@ -442,7 +444,10 @@ export function MapView() {
   }, [composite, threshold]);
 
   /** Every ring of the raw contour, largest first — the Planner's candidates (story 4.1). */
-  const rings = useMemo(() => (contour ? contourRings(contour) : []), [contour]);
+  const rings = useMemo(
+    () => (contour ? contourRings(contour, minRingAreaM2) : []),
+    [contour, minRingAreaM2],
+  );
   const ringsRef = useRef<ContourRing[]>([]);
   useEffect(() => {
     ringsRef.current = rings;
@@ -542,8 +547,8 @@ export function MapView() {
             range={ratioRange}
             threshold={threshold}
             onThresholdChange={setThreshold}
-            vertexCount={contour ? countVertices(contour) : 0}
-            ringCount={contour ? contour.coordinates.length : 0}
+            vertexCount={rings.reduce((sum, ring) => sum + ring.vertexCount, 0)}
+            ringCount={rings.length}
           />
         )}
         {rings.length > 0 && (
@@ -554,32 +559,38 @@ export function MapView() {
           />
         )}
         {selectedRing && threshold !== null && (
-          <>
-            <BufferPanel
-              metres={bufferMetres}
-              onMetresChange={setBufferMetres}
-              beforeVertices={selectedRing.vertexCount}
-              beforeAreaM2={selectedRing.areaM2}
-              afterVertices={bufferedRingInfo?.vertexCount ?? 0}
-              afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
-            />
-            <SimplifyPanel
-              tolerance={tolerance}
-              onToleranceChange={setTolerance}
-              originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
-              simplifiedVertices={boundary ? countVertices(boundary) : 0}
-              ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
-            />
-            <ExportPanel
-              boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
-              otherRingCount={Math.max(rings.length - 1, 0)}
-              threshold={threshold}
-              tolerance={tolerance}
-              bufferMetres={bufferMetres}
-              from={from}
-              to={to}
-            />
-          </>
+          <BufferPanel
+            metres={bufferMetres}
+            onMetresChange={setBufferMetres}
+            beforeVertices={selectedRing.vertexCount}
+            beforeAreaM2={selectedRing.areaM2}
+            afterVertices={bufferedRingInfo?.vertexCount ?? 0}
+            afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
+          />
+        )}
+        {threshold !== null && (
+          <SimplifyPanel
+            minRingAreaM2={minRingAreaM2}
+            onMinRingAreaM2Change={setMinRingAreaM2}
+            candidateRingCount={contour ? contour.coordinates.length : 0}
+            survivingRingCount={rings.length}
+            tolerance={tolerance}
+            onToleranceChange={setTolerance}
+            originalVertices={bufferedPolygon ? countVertices(bufferedPolygon) : 0}
+            simplifiedVertices={boundary ? countVertices(boundary) : 0}
+            ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
+          />
+        )}
+        {selectedRing && threshold !== null && (
+          <ExportPanel
+            boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
+            otherRingCount={Math.max(rings.length - 1, 0)}
+            threshold={threshold}
+            tolerance={tolerance}
+            bufferMetres={bufferMetres}
+            from={from}
+            to={to}
+          />
         )}
       </div>
     </div>

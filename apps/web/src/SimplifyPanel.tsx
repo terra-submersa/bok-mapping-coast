@@ -1,6 +1,10 @@
 import { PILOT2_VERTEX_CEILING } from "@bok/core";
 
 export interface SimplifyPanelProps {
+  minRingAreaM2: number;
+  onMinRingAreaM2Change: (value: number) => void;
+  candidateRingCount: number;
+  survivingRingCount: number;
   tolerance: number;
   onToleranceChange: (value: number) => void;
   originalVertices: number;
@@ -9,6 +13,10 @@ export interface SimplifyPanelProps {
 }
 
 export function SimplifyPanel({
+  minRingAreaM2,
+  onMinRingAreaM2Change,
+  candidateRingCount,
+  survivingRingCount,
   tolerance,
   onToleranceChange,
   originalVertices,
@@ -22,6 +30,23 @@ export function SimplifyPanel({
   return (
     <section className="panel">
       <h2>Simplify</h2>
+
+      <div className="field">
+        <label htmlFor="min-ring-area">Minimum ring area: {minRingAreaM2} m²</label>
+        <input
+          id="min-ring-area"
+          type="range"
+          min={0}
+          max={2000}
+          step={50}
+          value={minRingAreaM2}
+          onChange={(e) => onMinRingAreaM2Change(Number(e.target.value))}
+        />
+        <p className="hint">
+          Drops offshore contour noise — glint, wave, and Posidonia speckle — before ring selection.{" "}
+          {survivingRingCount} of {candidateRingCount} candidate rings survive at this threshold.
+        </p>
+      </div>
 
       <div className="field">
         <label htmlFor="tolerance">Tolerance: {tolerance} m</label>

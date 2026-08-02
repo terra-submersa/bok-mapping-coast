@@ -14,6 +14,11 @@ export {
   type ProcessingApiLimitCheck,
   SENTINEL2_NATIVE_RESOLUTION_M,
 } from "./processing-limit.js";
-export { type ContourRing, contourRings, findRingContaining } from "./rings.js";
+export {
+  type ContourRing,
+  contourRings,
+  findRingContaining,
+  MIN_RING_AREA_M2,
+} from "./rings.js";
 export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";

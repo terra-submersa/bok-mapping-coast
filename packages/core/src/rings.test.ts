@@ -1,6 +1,6 @@
 import { booleanPointInPolygon } from "@turf/turf";
 import { describe, expect, it } from "vitest";
-import { contourRings, findRingContaining } from "./rings.js";
+import { contourRings, findRingContaining, MIN_RING_AREA_M2 } from "./rings.js";
 
 function square(lon: number, lat: number, size: number): GeoJSON.Position[] {
   return [
@@ -59,6 +59,35 @@ describe("contourRings", () => {
     const [ring] = contourRings(geometry);
     expect(ring.vertexCount).toBe(5);
     expect(booleanPointInPolygon(ring.anchor, ring.polygon)).toBe(true);
+  });
+
+  it("drops rings smaller than the default area threshold as contour noise", () => {
+    const geometry: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [[square(23.1, 37.4, 0.0001)], [square(23.2, 37.4, 0.02)]],
+    };
+    const rings = contourRings(geometry);
+    expect(rings).toHaveLength(1);
+    expect(rings[0].polygon.coordinates[0][0][0]).toBeCloseTo(23.2, 5);
+  });
+
+  it("keeps a small ring when given an explicitly lower threshold", () => {
+    const geometry: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [[square(23.1, 37.4, 0.0001)]],
+    };
+    expect(contourRings(geometry, 0)).toHaveLength(1);
+    expect(contourRings(geometry, MIN_RING_AREA_M2)).toHaveLength(0);
+  });
+
+  it("treats the threshold as an inclusive lower bound", () => {
+    const geometry: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [[square(23.1, 37.4, 0.001)]],
+    };
+    const [ring] = contourRings(geometry, 0);
+    expect(contourRings(geometry, ring.areaM2)).toHaveLength(1);
+    expect(contourRings(geometry, ring.areaM2 + 1)).toHaveLength(0);
   });
 
   it("anchors a concave ring inside itself, unlike a geometric centroid", () => {

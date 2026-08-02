@@ -20,17 +20,33 @@ export interface ContourRing {
   anchor: GeoJSON.Position;
 }
 
-/** Every ring of a contour as an independent candidate, largest area first. */
-export function contourRings(geometry: GeoJSON.MultiPolygon): ContourRing[] {
+/**
+ * Below this, a ring is Sentinel-2 speckle, not a real shallow-water patch:
+ * glint, wave noise, and misclassified Posidonia blades all trace sub-pixel
+ * loops. ~3 pixels' worth of area at the 10 m resolution of the B02/B03
+ * bands used for Stumpf (issue #24).
+ */
+export const MIN_RING_AREA_M2 = 300;
+
+/**
+ * Every ring of a contour as an independent candidate, largest area first.
+ * Rings smaller than `minAreaM2` are dropped as contour noise (issue #24).
+ */
+export function contourRings(
+  geometry: GeoJSON.MultiPolygon,
+  minAreaM2 = MIN_RING_AREA_M2,
+): ContourRing[] {
   const rings: ContourRing[] = [];
 
   for (const polygon of geometry.coordinates) {
     const ring = polygon[0];
     if (!ring || ring.length < 4) continue;
     const feature = turfPolygon([ring]);
+    const areaM2 = area(feature);
+    if (areaM2 < minAreaM2) continue;
     rings.push({
       polygon: { type: "Polygon", coordinates: [ring] },
-      areaM2: area(feature),
+      areaM2,
       vertexCount: ring.length,
       anchor: pointOnFeature(feature).geometry.coordinates,
     });
