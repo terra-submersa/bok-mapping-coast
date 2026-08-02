@@ -32,6 +32,7 @@ import { type Composite, fetchComposite } from "./composite.js";
 import { DepthPanel, type LayerView } from "./DepthPanel.js";
 import { renderComposite, renderSceneCount, sceneCountRange, waterRange } from "./depth-ramp.js";
 import { ExportPanel } from "./ExportPanel.js";
+import { loadStoredNumber, storeNumber } from "./param-storage.js";
 import { RingPanel } from "./RingPanel.js";
 import { SimplifyPanel } from "./SimplifyPanel.js";
 import { ThresholdPanel } from "./ThresholdPanel.js";
@@ -163,9 +164,16 @@ export function MapView() {
   const [layerView, setLayerView] = useState<LayerView>("depth");
   const [ratioRange, setRatioRange] = useState<{ min: number; max: number } | null>(null);
   const [threshold, setThreshold] = useState<number | null>(null);
-  const [tolerance, setTolerance] = useState(0);
-  const [bufferMetres, setBufferMetres] = useState(DEFAULT_BUFFER_METRES);
-  const [minRingAreaM2, setMinRingAreaM2] = useState(MIN_RING_AREA_M2);
+  // Simplification tolerance, landward buffer, and the ring-noise filter are
+  // tuned per AOI but tend to converge on a good value for a given site, so
+  // they're persisted across sessions rather than reset to a default every load.
+  const [tolerance, setTolerance] = useState(() => loadStoredNumber("tolerance", 0));
+  const [bufferMetres, setBufferMetres] = useState(() =>
+    loadStoredNumber("bufferMetres", DEFAULT_BUFFER_METRES),
+  );
+  const [minRingAreaM2, setMinRingAreaM2] = useState(() =>
+    loadStoredNumber("minRingAreaM2", MIN_RING_AREA_M2),
+  );
 
   /**
    * The point a Planner last picked, geographically — not a ring index, which
@@ -434,6 +442,10 @@ export function MapView() {
       map.setPaintProperty(DEPTH_LAYER_ID, "raster-opacity", opacity);
     }
   }, [opacity]);
+
+  useEffect(() => storeNumber("tolerance", tolerance), [tolerance]);
+  useEffect(() => storeNumber("bufferMetres", bufferMetres), [bufferMetres]);
+  useEffect(() => storeNumber("minRingAreaM2", minRingAreaM2), [minRingAreaM2]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paintLayer is redefined every render and reads opacity from render scope on purpose — see the opacity effect above for live opacity updates
   useEffect(() => {
