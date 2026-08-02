@@ -51,6 +51,21 @@ As a Planner, I can define a bounding box for my AOI so the backend knows what t
 > 2500 px at Sentinel-2's native 10 m (the synchronous Processing API cap).
 > Verified in a browser end to end; the Kiladha spike bbox reads 5.84 km².
 
+> **Bug fixed:** moving the AOI did not invalidate anything derived from the old
+> one. Draw or paste a new box while a composite was loaded and the depth raster,
+> the contour, the vertex counts and the *Download boundary KML* button all stayed
+> — pinned to the previous bbox, with nothing on screen saying so. A Planner could
+> export a flight boundary for a stretch of coast they were no longer looking at.
+> `Clear` had always dropped the derived state; changing the AOI never did.
+>
+> `applyBbox` now drops the composite whenever the box actually changes
+> (`sameBbox` in core — exact comparison, since the composite is fetched on a
+> pixel grid pinned to its corners). Re-applying an identical bbox keeps the
+> composite, so pasting the same numbers twice costs nothing.
+>
+> Found by driving the real UI and comparing pixels, which is what story 3.1's
+> note said to do after the last bug slipped through an accessibility-tree check.
+
 ### 1.2 Name and save a project `todo`
 As a Planner, I can save an AOI as a named project, so Kiladha stays separate from later sites.
 

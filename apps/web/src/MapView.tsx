@@ -6,6 +6,7 @@ import {
   type ProcessingApiLimitCheck,
   parseBboxInput,
   type Range,
+  sameBbox,
   shallowWaterContour,
   simplifyContour,
 } from "@bok/core";
@@ -116,6 +117,11 @@ export function MapView() {
   const drawRef = useRef<TerraDraw | null>(null);
 
   const [bbox, setBboxState] = useState<BBox | null>(null);
+  /**
+   * Mirrors `bbox`. The terra-draw "finish" handler is registered once at mount,
+   * so its closure would otherwise read a `bbox` that is forever null.
+   */
+  const bboxRef = useRef<BBox | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   const [from, setFrom] = useState(DEFAULT_FROM);
@@ -129,12 +135,20 @@ export function MapView() {
   const [tolerance, setTolerance] = useState(0);
 
   function showBbox(next: BBox | null) {
+    bboxRef.current = next;
     setBboxState(next);
     const source = mapRef.current?.getSource(AOI_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(next ? bboxToFeatureCollection(next) : emptyFeatureCollection());
   }
 
   function applyBbox(next: BBox) {
+    // Everything downstream is computed for one specific bbox: the composite is
+    // fetched for it, the contour comes from that composite, and the KML comes
+    // from that contour. Moving the AOI invalidates the lot, so drop it rather
+    // than leave a raster and a contour pinned to the previous box — a Planner
+    // would otherwise happily export a flight boundary for the wrong stretch of
+    // coast, with nothing on screen saying so.
+    if (!sameBbox(bboxRef.current, next)) clearComposite();
     showBbox(next);
     storeAoi(next);
   }

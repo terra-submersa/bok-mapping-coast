@@ -1,5 +1,5 @@
 export type { BBox } from "./bbox.js";
-export { bboxAreaKm2 } from "./bbox.js";
+export { bboxAreaKm2, sameBbox } from "./bbox.js";
 export { parseBboxInput } from "./bbox-input.js";
 export {
   type ContourOptions,
