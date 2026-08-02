@@ -73,7 +73,7 @@ export function ExportPanel({
         )}
 
         <p className="hint">
-          Pilot 2 takes one simple polygon: the ring chosen above, buffered, then simplified.
+          Pilot 2 takes one simple polygon: the ring(s) chosen above, buffered, then simplified.
         </p>
         <p className="error">
           Not yet flown. This KML is written from the OGC spec, not from a Pilot 2 export — it must

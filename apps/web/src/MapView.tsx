@@ -86,17 +86,19 @@ function emptyFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   return { type: "FeatureCollection", features: [] };
 }
 
-/** Every candidate ring as its own feature, tagged so the selected one can be
- * styled apart from the offshore noise (story 4.1). */
+/** Every candidate ring as its own feature, tagged so the selected one (or,
+ * with "all rings" chosen, every one) can be styled apart from the offshore
+ * noise (story 4.1). */
 function ringsFeatureCollection(
   rings: ContourRing[],
   selected: ContourRing | null,
+  allSelected: boolean,
 ): GeoJSON.FeatureCollection<GeoJSON.Polygon, { selected: boolean }> {
   return {
     type: "FeatureCollection",
     features: rings.map((ring) => ({
       type: "Feature",
-      properties: { selected: ring === selected },
+      properties: { selected: allSelected || ring === selected },
       geometry: ring.polygon,
     })),
   };
@@ -191,6 +193,9 @@ export function MapView() {
    * contains this point (story 4.1's "survives a threshold change" criterion).
    */
   const [selectedAnchor, setSelectedAnchor] = useState<GeoJSON.Position | null>(null);
+  /** "All rings" mode: the flight area is every candidate ring, unioned, rather
+   * than the one `selectedAnchor` picks out. */
+  const [allRingsSelected, setAllRingsSelected] = useState(false);
 
   /** Which sidebar section is expanded — exactly one at a time, "aoi" on load. */
   const [activeSection, setActiveSection] = useState("aoi");
@@ -240,6 +245,7 @@ export function MapView() {
     setRatioRange(null);
     setThreshold(null);
     setSelectedAnchor(null);
+    setAllRingsSelected(false);
     // The later sections this invalidates are about to unmount — fall back to
     // the first one rather than leaving the accordion pointed at nothing.
     setActiveSection("aoi");
@@ -383,7 +389,10 @@ export function MapView() {
       });
 
       // All candidate rings, styled apart by the "selected" flag (story 4.1).
-      map.addSource(RINGS_SOURCE_ID, { type: "geojson", data: ringsFeatureCollection([], null) });
+      map.addSource(RINGS_SOURCE_ID, {
+        type: "geojson",
+        data: ringsFeatureCollection([], null, false),
+      });
       map.addLayer({
         id: "rings-fill",
         type: "fill",
@@ -428,7 +437,10 @@ export function MapView() {
         if (isDrawingRef.current) return;
         const point: GeoJSON.Position = [e.lngLat.lng, e.lngLat.lat];
         const match = findRingContaining(ringsRef.current, point);
-        if (match) setSelectedAnchor(match.anchor);
+        if (match) {
+          setAllRingsSelected(false);
+          setSelectedAnchor(match.anchor);
+        }
       });
 
       const stored = loadStoredAoi();
@@ -500,14 +512,35 @@ export function MapView() {
   }, [selectedRing]);
 
   /**
+   * The raw geometry the buffer step grows: either the one selected ring, or
+   * every ring unioned together when the Planner picked "All rings" — e.g. a
+   * survey area that a Posidonia gap split into a few adjacent fragments.
+   */
+  const combinedPolygon = useMemo(() => {
+    if (!allRingsSelected) return selectedRing?.polygon ?? null;
+    if (rings.length === 0) return null;
+    return rings.map((ring) => ring.polygon).reduce((acc, polygon) => unionPolygons(acc, polygon));
+  }, [allRingsSelected, selectedRing, rings]);
+
+  /** Stats for the buffer step's "before" column — the combined ring(s) as
+   * picked above, unbuffered. */
+  const combinedRingInfo = useMemo(() => {
+    if (!allRingsSelected) return selectedRing;
+    if (!combinedPolygon || combinedPolygon.coordinates.length === 0) return null;
+    return (
+      contourRings({ type: "MultiPolygon", coordinates: [combinedPolygon.coordinates] })[0] ?? null
+    );
+  }, [allRingsSelected, combinedPolygon, selectedRing]);
+
+  /**
    * Grown outward so flight lines reach past the raw contour and catch
    * shoreline features — SfM has no tie points over open water (story 4.3).
-   * Derived, never applied in place: `selectedRing` stays unbuffered so
+   * Derived, never applied in place: `combinedPolygon` stays unbuffered so
    * dragging the distance back to 0 restores it exactly.
    */
   const bufferedPolygon = useMemo(
-    () => (selectedRing ? bufferPolygon(selectedRing.polygon, bufferMetres) : null),
-    [selectedRing, bufferMetres],
+    () => (combinedPolygon ? bufferPolygon(combinedPolygon, bufferMetres) : null),
+    [combinedPolygon, bufferMetres],
   );
 
   const bufferedRingInfo = useMemo(() => {
@@ -554,8 +587,8 @@ export function MapView() {
 
   useEffect(() => {
     const source = mapRef.current?.getSource(RINGS_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(ringsFeatureCollection(rings, selectedRing));
-  }, [rings, selectedRing]);
+    source?.setData(ringsFeatureCollection(rings, selectedRing, allRingsSelected));
+  }, [rings, selectedRing, allRingsSelected]);
 
   useEffect(() => {
     const source = mapRef.current?.getSource(BOUNDARY_SOURCE_ID) as GeoJSONSource | undefined;
@@ -614,15 +647,20 @@ export function MapView() {
             <RingPanel
               rings={rings}
               selectedRing={selectedRing}
-              onSelect={(ring) => setSelectedAnchor(ring.anchor)}
+              allSelected={allRingsSelected}
+              onSelect={(ring) => {
+                setAllRingsSelected(false);
+                setSelectedAnchor(ring.anchor);
+              }}
+              onSelectAll={() => setAllRingsSelected(true)}
             />
           )}
           {selectedRing && threshold !== null && (
             <BufferPanel
               metres={bufferMetres}
               onMetresChange={setBufferMetres}
-              beforeVertices={selectedRing.vertexCount}
-              beforeAreaM2={selectedRing.areaM2}
+              beforeVertices={combinedRingInfo?.vertexCount ?? 0}
+              beforeAreaM2={combinedRingInfo?.areaM2 ?? 0}
               afterVertices={bufferedRingInfo?.vertexCount ?? 0}
               afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
             />
@@ -643,7 +681,7 @@ export function MapView() {
           {selectedRing && threshold !== null && (
             <ExportPanel
               boundary={boundary && boundary.coordinates.length > 0 ? boundary : null}
-              otherRingCount={Math.max(rings.length - 1, 0)}
+              otherRingCount={allRingsSelected ? 0 : Math.max(rings.length - 1, 0)}
               threshold={threshold}
               tolerance={tolerance}
               bufferMetres={bufferMetres}
