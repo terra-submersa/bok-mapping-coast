@@ -159,6 +159,12 @@ that the pilot types into Pilot 2 by hand.
    composite is expensive.
 5. Epic 5 (GSD, flight time, solar) is the most fun to build and the least load
    bearing. It stays parked behind a working chain of Epics 1 → 2 → 3 → 4 → 6.
+6. **One issue per commit.** Never bundle work for multiple GitHub issues into a
+   single commit. If a commit's diff spans more than one issue, split it.
+7. **File the issue before the code.** When the user asks for a new feature or
+   reports a bug, first create a GitHub issue for it (`gh issue create`) — with
+   the `<epic>.<story>` title prefix and appropriate `epic:` label — before
+   writing any implementation. Reference that issue number in the commit(s).
 
 ## Open questions
 
