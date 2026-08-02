@@ -14,20 +14,25 @@ bay mouth to Lambayanna beach.
 ## Status
 
 Spike passed: `scripts/spike-sdb-kiladha.mjs` produced a plausible 4 m contour for
-Kiladha Bay, checked against the Lambayanna structures in QGIS (story 0.1).
+Kiladha Bay, checked against the Lambayanna structures in QGIS
+([#1](https://github.com/terra-submersa/bok-mapping-coast/issues/1)).
 
-The monorepo is scaffolded and runnable (see [Getting started](#getting-started)),
-but the Walking Skeleton itself — AOI input, SDB request, threshold, simplify,
-KML export — is not yet built. See [`docs/user-stories.md`](docs/user-stories.md)
-for what's next.
+The Walking Skeleton now runs end to end: draw a bounding box → request an SDB
+composite → see it over satellite imagery → drag the threshold → simplify →
+download a KML. One thing stands between that and a file you can actually fly —
+the KML has **not** been round-tripped on the real RC
+([#7](https://github.com/terra-submersa/bok-mapping-coast/issues/7)).
+
+The backlog lives in
+[GitHub Issues](https://github.com/terra-submersa/bok-mapping-coast/issues).
 
 ## Documentation
 
 | File | What's in it |
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Project context, architecture, and the non-obvious domain constraints |
-| [`docs/user-stories.md`](docs/user-stories.md) | The backlog — source of truth for intent |
 | [`docs/design-decisions.md`](docs/design-decisions.md) | What was decided, why, and what it costs |
+| [GitHub Issues](https://github.com/terra-submersa/bok-mapping-coast/issues) | The backlog — single source of truth for stories |
 
 ## Layout
 
@@ -51,12 +56,12 @@ pnpm lint
 ```
 
 ```bash
-./scripts/bootstrap-github.sh   # labels, milestone, Walking Skeleton issues
 ./scripts/setup-hooks.sh        # wire up local pre-commit / commit-msg hooks
 ```
 
-`bootstrap-github.sh` requires an authenticated `gh` CLI. Run once — it will create
-duplicate issues if re-run.
+`scripts/bootstrap-github.sh` created the initial labels, milestone and Walking
+Skeleton issues. It has already been run and is kept for reference only — the
+backlog has since moved on in GitHub, and re-running it would create duplicates.
 
 ## DevSecOps
 

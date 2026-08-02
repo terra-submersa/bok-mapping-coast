@@ -2,8 +2,12 @@
 #
 # Bootstrap GitHub labels, the Walking Skeleton milestone, and its issues.
 #
-# Idempotent-ish: label creation failures are tolerated, but re-running WILL
-# create duplicate issues. Run once.
+# HISTORICAL — already run, kept for reference. GitHub Issues are now the single
+# source of truth for the backlog (see D9 in docs/design-decisions.md), so the
+# live issues have moved well past what this script recreates, and the bodies
+# below still point at docs/user-stories.md, which no longer exists.
+#
+# Do not run this again: it WILL create duplicate issues.
 #
 # Requires: gh CLI, authenticated, with the repo as origin.
 #   gh auth status

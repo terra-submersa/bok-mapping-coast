@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Spike 0.1 (docs/user-stories.md, Epic 0) — throwaway, no app, no tests.
+// Spike 0.1 (issue #1) — throwaway, no app, no tests.
 // Proves whether a plausible 4 m Stumpf-ratio contour exists for Kiladha Bay
 // before any application code is written. Run and inspect the output in QGIS;
 // if it looks wrong against the Lambayanna structures, the project is not

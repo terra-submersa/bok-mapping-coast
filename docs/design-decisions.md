@@ -95,6 +95,9 @@ or a browser.
 
 ## D7 — Stories in markdown, issues for execution only
 
+> **Superseded by D9.** Kept as written; the reasoning below is still worth knowing,
+> the conclusion no longer holds.
+
 **Decided.** `docs/user-stories.md` is the source of truth for intent. GitHub Issues
 are created only for the active milestone.
 
@@ -120,10 +123,36 @@ couple of metres with published positions, giving a free independent depth refer
 
 ---
 
+## D9 — GitHub Issues are the only place stories live (supersedes D7)
+
+**Decided.** `docs/user-stories.md` is deleted. Every story — the whole backlog, not
+just the active milestone — is a GitHub issue. Intent and execution live together.
+
+**Why.** D7 bet that a churning backlog is easier to edit as markdown than as issues,
+and paid for it with two places a story could live. In practice the duplication was
+the expensive part: a story was written in markdown, promoted to an issue, then
+finished — and the outcome got written back into the markdown, where the issue that
+tracked the work said nothing. Anyone reading the issue got half the story, and the
+one-directional "the issue wins" rule quietly inverted.
+
+The backlog has also stopped churning in the way D7 anticipated. Epic 2 took the
+shape the first Kiladha composite suggested and stayed there; what changes now is
+status, not structure — which is exactly what issues are good at. Labels carry the
+epics, checkboxes carry the acceptance criteria, and the closing note carries the
+outcome, next to the commits that produced it.
+
+**Cost.** No diff, no bulk edit, no reading the whole backlog in one scroll. `gh issue
+list` is a poorer instrument than a file. Accepted, because it buys a single place to
+look. Non-story context that used to sit in the same file — personas, out-of-scope —
+moved to `CLAUDE.md`, which is read at the start of every session anyway.
+
+---
+
 ## Undecided
 
 - **Refraction convention.** Submerged features are displaced by n≈1.34. Does
-  `max_depth` mean true depth or apparent depth?
+  `max_depth` mean true depth or apparent depth? Blocks #12.
 - **Vertical datum.** Argolic Gulf tides are ~20–30 cm so the error is small, but "4 m"
   still needs a stated reference (MSL vs. instantaneous surface at acquisition).
-- **Manual edits vs recompute.** See story 4.4.
+  Blocks #12.
+- **Manual edits vs recompute.** See #16.

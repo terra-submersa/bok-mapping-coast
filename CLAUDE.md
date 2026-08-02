@@ -44,7 +44,7 @@ packages/dji       KML serialization for DJI Pilot 2. Isolated because Pilot is
 apps/api           Node service. Talks to Copernicus, handles rasters, caches,
                    persists projects. The only place with I/O and secrets.
 apps/web           Vite + React. MapLibre GL JS. Polygon editing + parameters.
-docs/              user-stories.md is the backlog source of truth.
+docs/              design-decisions.md — ADR-lite. The backlog is in GitHub Issues.
 scripts/           One-off and bootstrap scripts.
 ```
 
@@ -138,7 +138,7 @@ that the pilot types into Pilot 2 by hand.
   needs a stated reference. Currently undecided.
 - **Pilot 2 KML is fussy.** The reliable approach is to export a dummy mission from
   Pilot itself and use its XML as a template, rather than emitting generic KML.
-  Do not consider story 6.1 done until a file has round-tripped on the actual RC.
+  Do not consider issue #7 done until a file has round-tripped on the actual RC.
 - **Vertex count**: a raster-derived contour has thousands of vertices and many
   rings with holes. Pilot 2 wants one simple polygon and the RC chokes on high
   vertex counts. Simplification is mandatory, must be non-destructive (keep the
@@ -150,8 +150,8 @@ that the pilot types into Pilot 2 by hand.
    plausible 4 m contour in Kiladha Bay with a throwaway script that dumps a GeoTIFF
    for inspection in QGIS. If SDB doesn't work there, the app is pointless.
    **Status: done.** `scripts/spike-sdb-kiladha.mjs` produced a plausible contour,
-   checked against the Lambayanna structures in QGIS — see story 0.1 in
-   `docs/user-stories.md`. The monorepo scaffold above followed from this result.
+   checked against the Lambayanna structures in QGIS — see issue #1. The monorepo
+   scaffold above followed from this result.
 2. `packages/core` is pure and tested. If a function needs the network, it is in
    the wrong package.
 3. Secrets live in `apps/api` env only. Never commit CDSE credentials.
@@ -164,7 +164,7 @@ that the pilot types into Pilot 2 by hand.
 
 Flagged rather than guessed. Raise these rather than silently deciding.
 
-- **Manual edits vs recompute** (story 4.4). If edits are wiped on recompute the
+- **Manual edits vs recompute** (issue #16). If edits are wiped on recompute the
   tool is infuriating; if they persist blindly they silently override better data.
   Current plan: recompute is explicitly destructive with a confirmation. Revisit
   if it hurts.
@@ -175,6 +175,46 @@ Flagged rather than guessed. Raise these rather than silently deciding.
 
 ## Backlog
 
-`docs/user-stories.md` is the source of truth for intent.
-GitHub Issues track execution only, and only for the active milestone.
-When a story is promoted to an issue, the issue wins. Do not maintain both.
+**GitHub Issues are the single source of truth for stories — intent *and* execution.**
+There is no backlog markdown file. `docs/user-stories.md` used to hold it and has
+been removed; do not recreate it, and do not mirror stories into any other document.
+
+At the start of a session, read the backlog from GitHub rather than from memory:
+
+```bash
+gh issue list --state open --limit 50          # what's outstanding
+gh issue list --milestone "Walking Skeleton"   # the active milestone
+gh issue view <n>                              # a story, its criteria, its outcome
+```
+
+Conventions:
+
+- Titles keep the `<epic>.<story>` prefix (`4.1 Select the contour ring`) — the
+  numbering is stable and worth keeping for cross-references.
+- Epics are labels: `epic:aoi`, `epic:sdb`, `epic:calibration`, `epic:polygon`,
+  `epic:flight`, `epic:export`. Status that isn't open/closed is a label too:
+  `spike`, `contested`, `parked`.
+- Milestones are for scheduling only. `Walking Skeleton` is the active one;
+  everything else carries no milestone.
+- Acceptance criteria are checkboxes in the body. When a story is finished, close
+  it **and** append the outcome — what was built, what was measured, what is still
+  unverified. That closing note is the project's memory; a bare "done" loses it.
+- Reference issues by number (`#7`), never by story number, in code and commits.
+
+## Personas
+
+- **Planner** — at a desk, iterating on the shallow-water polygon days before the trip.
+- **Pilot** — on the beach at Kiladha with the RC, needing a file that just works.
+
+Both are currently the same person wearing different hats. The split is kept because
+it forces the question *"what does the pilot need that the planner can't anticipate?"* —
+which is mostly the mission card, and the fact that nothing can be re-run in the field.
+
+## Deliberately out of scope
+
+- Multi-user, authentication, sharing
+- Mission history and flight logs
+- WPML waypoint generation (Pilot 2 plans the lines; revisit only if glint control
+  proves impossible by hand)
+- Multi-year composite comparison — arguably interesting for coastal change, but
+  scope creep for v1
