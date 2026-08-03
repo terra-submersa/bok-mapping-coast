@@ -76,4 +76,28 @@ describe("unionPolygons", () => {
     expect(booleanPointInPolygon([5, 5], merged)).toBe(false);
     expect(booleanPointInPolygon([1, 1], merged)).toBe(true);
   });
+
+  it("accepts a MultiPolygon input (issue #31, e.g. a multi-piece coastal ribbon)", () => {
+    const a = square(0, 0, 2);
+    const overlapping: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [square(1, 1, 2).coordinates],
+    };
+    const merged = unionPolygons(a, overlapping);
+    expect(booleanPointInPolygon([0.5, 0.5], merged)).toBe(true);
+    expect(booleanPointInPolygon([2.5, 2.5], merged)).toBe(true);
+  });
+
+  it("picks the larger piece when a MultiPolygon input has a disjoint piece", () => {
+    const a = square(0, 0, 1);
+    const multi: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [square(0.4, 0.4, 5).coordinates, square(20, 20, 1).coordinates],
+    };
+    const merged = unionPolygons(a, multi);
+    // The overlapping piece wins (it merges with `a` into the larger result).
+    expect(booleanPointInPolygon([3, 3], merged)).toBe(true);
+    // The disjoint far-away piece is dropped by the final largest-piece step.
+    expect(booleanPointInPolygon([20.5, 20.5], merged)).toBe(false);
+  });
 });

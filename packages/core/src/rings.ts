@@ -60,9 +60,10 @@ export function contourRings(
  *
  * Companion to `contourRings`, which is deliberately hole-free: a candidate
  * ring the Planner picks from can safely drop a small island cutout. But a
- * hole that excludes real land far from the coast — the coastal ribbon's
- * inward erosion produces exactly this (issue #30) — must survive whatever
- * merge or AOI clip runs next, or it silently gets refilled.
+ * hole can be meaningful in its own right elsewhere — a genuinely deep
+ * patch inside an otherwise shallow depth contour, say (issue #30) — and
+ * must survive whatever merge or AOI clip runs next, or it silently gets
+ * refilled.
  */
 export function largestPolygon(
   geometry: GeoJSON.MultiPolygon,

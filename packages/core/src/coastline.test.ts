@@ -1,4 +1,4 @@
-import { area, booleanPointInPolygon, polygon as turfPolygon } from "@turf/turf";
+import { area, booleanPointInPolygon } from "@turf/turf";
 import { describe, expect, it } from "vitest";
 import { coastalRibbon, landMask } from "./coastline.js";
 import type { RatioGrid } from "./contour.js";
@@ -47,16 +47,14 @@ describe("coastalRibbon", () => {
     const ribbon = coastalRibbon(land, 50_000); // huge distance in this degree-sized grid, just to get clear separation
     expect(ribbon).not.toBeNull();
     // A point on the water side, near the land/water boundary, should be swallowed by the ribbon.
-    expect(booleanPointInPolygon([1.9, 2], ribbon as GeoJSON.Polygon)).toBe(true);
+    expect(booleanPointInPolygon([1.9, 2], ribbon as GeoJSON.MultiPolygon)).toBe(true);
   });
 
   it("grows as the distance grows", () => {
     const land = landMask(grid(RIGHT_LAND));
     const near = coastalRibbon(land, 10_000);
     const far = coastalRibbon(land, 50_000);
-    expect(area(turfPolygon((far as GeoJSON.Polygon).coordinates))).toBeGreaterThan(
-      area(turfPolygon((near as GeoJSON.Polygon).coordinates)),
-    );
+    expect(area(far as GeoJSON.MultiPolygon)).toBeGreaterThan(area(near as GeoJSON.MultiPolygon));
   });
 
   it("returns null at zero metres", () => {
@@ -75,16 +73,41 @@ describe("coastalRibbon", () => {
     // Before the fix, an unbounded outward buffer of the whole land mass
     // included it regardless of distance from shore.
     const land = landMask(grid(RIGHT_LAND));
-    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.Polygon;
+    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.MultiPolygon;
     // x=3 sits in the middle of the 2-degree-wide land mass — ~110 km from
     // both the shoreline at x=2 and the grid's far edge at x=4, well beyond
     // the 5 km ribbon on either side.
     expect(booleanPointInPolygon([3, 2], ribbon)).toBe(false);
   });
 
-  it("still covers land right at the coast", () => {
+  it("never covers land, even right at the coast (issue #31)", () => {
     const land = landMask(grid(RIGHT_LAND));
-    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.Polygon;
-    expect(booleanPointInPolygon([2.01, 2], ribbon)).toBe(true);
+    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.MultiPolygon;
+    // Just inland of the coastline at x=2 — before the fix, the ribbon
+    // straddled the coast and covered this point too.
+    expect(booleanPointInPolygon([2.01, 2], ribbon)).toBe(false);
+    // Just on the water side of the same boundary — still fully covered.
+    expect(booleanPointInPolygon([1.99, 2], ribbon)).toBe(true);
+  });
+
+  it("gives every landmass its own ribbon, not just the largest (issue #31)", () => {
+    // A small islet (1 degree wide) on the left and a much bigger mainland
+    // (3 degrees wide) on the right, separated by 4 degrees of open water —
+    // far more than the 5 km ribbon distance, so the two never touch.
+    const wideGrid: RatioGrid = {
+      width: 8,
+      height: 4,
+      ratio: new Array(32).fill(1),
+      sceneCount: new Array(4).fill([0, 10, 10, 10, 10, 0, 0, 0]).flat(),
+      bbox: [0, 0, 8, 4],
+    };
+    const land = landMask(wideGrid);
+    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.MultiPolygon;
+    // Water just off the islet (coastline at x=1) ...
+    expect(booleanPointInPolygon([1.01, 2], ribbon)).toBe(true);
+    // ... and water just off the mainland (coastline at x=5) — both covered.
+    // Before the fix, `largestPolygon` kept only the mainland's larger band
+    // and silently dropped the islet's.
+    expect(booleanPointInPolygon([4.99, 2], ribbon)).toBe(true);
   });
 });

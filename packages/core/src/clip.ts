@@ -11,10 +11,11 @@ import { largestPolygon } from "./rings.js";
  * raster is pinned exactly to the AOI, so this restores that same edge as
  * the boundary's hard limit.
  *
- * Holes are kept: the coastal ribbon relies on one to exclude inland land
- * (issue #30), and clipping a polygon that has one is exactly where that
- * hole either gets clipped open into the AOI edge or stays a hole — either
- * way it must survive this step.
+ * Holes are kept: a hole can be meaningful in its own right (a genuinely
+ * deep patch inside an otherwise shallow depth contour, say — issue #30),
+ * and clipping a polygon that has one is exactly where that hole either
+ * gets clipped open into the AOI edge or stays a hole — either way it must
+ * survive this step.
  */
 export function clipToBbox(polygon: GeoJSON.Polygon, bbox: BBox): GeoJSON.Polygon {
   if (polygon.coordinates.length === 0) return polygon;

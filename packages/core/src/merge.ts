@@ -1,29 +1,36 @@
-import { featureCollection, polygon as turfPolygon, union as turfUnion } from "@turf/turf";
+import { feature, featureCollection, union as turfUnion } from "@turf/turf";
 import { largestPolygon } from "./rings.js";
+
+type Polygonal = GeoJSON.Polygon | GeoJSON.MultiPolygon;
+
+function toMultiPolygon(geometry: Polygonal): GeoJSON.MultiPolygon {
+  return geometry.type === "Polygon"
+    ? { type: "MultiPolygon", coordinates: [geometry.coordinates] }
+    : geometry;
+}
+
+const EMPTY_POLYGON: GeoJSON.Polygon = { type: "Polygon", coordinates: [] };
 
 /**
  * Merges two flight-boundary candidates into the one simple polygon Pilot 2
- * gets — e.g. the buffered/selected depth-contour ring and the coastal ribbon
- * that guarantees continuous near-shore coverage regardless of contour gaps
- * (issue #27). If the union splits into disjoint pieces, the largest by area
- * wins — same reasoning as `bufferPolygon`. Its holes are kept, not dropped:
- * the coastal ribbon relies on a hole to keep excluded inland land excluded
- * (issue #30) — only the boundary's very last step drops holes.
+ * gets — e.g. the buffered/selected depth-contour ring and the coastal
+ * ribbon that guarantees continuous near-shore coverage regardless of
+ * contour gaps (issue #27). The ribbon can itself be several disjoint
+ * pieces, one per landmass (issue #31), so either input may be a `Polygon`
+ * or a `MultiPolygon`.
+ *
+ * If the union splits into disjoint pieces, the largest by area wins — same
+ * reasoning as `bufferPolygon` — and this is the only place that happens:
+ * holes are otherwise kept, not dropped, since they can be meaningful in
+ * their own right (a genuinely deep patch inside an otherwise shallow depth
+ * contour, say) — only the boundary's very last step drops them.
  */
-export function unionPolygons(a: GeoJSON.Polygon, b: GeoJSON.Polygon): GeoJSON.Polygon {
-  if (a.coordinates.length === 0) return b;
-  if (b.coordinates.length === 0) return a;
+export function unionPolygons(a: Polygonal, b: Polygonal): GeoJSON.Polygon {
+  if (a.coordinates.length === 0) return largestPolygon(toMultiPolygon(b), 0) ?? EMPTY_POLYGON;
+  if (b.coordinates.length === 0) return largestPolygon(toMultiPolygon(a), 0) ?? EMPTY_POLYGON;
 
-  const merged = turfUnion(
-    featureCollection([turfPolygon(a.coordinates), turfPolygon(b.coordinates)]),
-  );
-  if (!merged) return a;
+  const merged = turfUnion(featureCollection([feature(a), feature(b)]));
+  if (!merged) return largestPolygon(toMultiPolygon(a), 0) ?? EMPTY_POLYGON;
 
-  const { geometry } = merged;
-  const multi: GeoJSON.MultiPolygon =
-    geometry.type === "Polygon"
-      ? { type: "MultiPolygon", coordinates: [geometry.coordinates] }
-      : geometry;
-
-  return largestPolygon(multi, 0) ?? a;
+  return largestPolygon(toMultiPolygon(merged.geometry), 0) ?? EMPTY_POLYGON;
 }
