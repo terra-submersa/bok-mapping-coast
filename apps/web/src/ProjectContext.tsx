@@ -13,6 +13,7 @@ import { type Composite, fetchComposite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
+import { loadStoredExclusions, storeExclusions } from "./zone-storage.js";
 
 /** Default composite window: the most recent complete summer, as in the spike. */
 const DEFAULT_FROM = "2025-06-01";
@@ -31,6 +32,16 @@ export interface ProjectContextValue {
   setIsDrawing: (drawing: boolean) => void;
   applyAoi: (next: Aoi) => void;
   clearAoi: () => void;
+
+  /**
+   * Hand-drawn areas cut out of the flight boundary — the harbour, the moorings,
+   * the swimming area (issue #17). Inputs, not edits: a recompute re-applies them
+   * rather than wiping them (D10).
+   */
+  exclusions: GeoJSON.Polygon[];
+  addExclusion: (zone: GeoJSON.Polygon) => void;
+  removeExclusion: (index: number) => void;
+  clearExclusions: () => void;
 
   /** Composite window and the raster fetched for it. */
   from: string;
@@ -94,6 +105,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
    */
   const aoiRef = useRef<Aoi | null>(aoi);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [exclusions, setExclusions] = useState<GeoJSON.Polygon[]>(() => loadStoredExclusions());
 
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
@@ -125,6 +137,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [selectedAnchor, setSelectedAnchor] = useState<GeoJSON.Position | null>(null);
   const [allRingsSelected, setAllRingsSelected] = useState(false);
 
+  useEffect(() => storeExclusions(exclusions), [exclusions]);
   useEffect(() => storeNumber("tolerance", tolerance), [tolerance]);
   useEffect(() => storeNumber("bufferMetres", bufferMetres), [bufferMetres]);
   useEffect(() => storeNumber("coastMetres", coastMetres), [coastMetres]);
@@ -160,6 +173,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     },
     [clearComposite],
   );
+
+  const addExclusion = useCallback((zone: GeoJSON.Polygon) => {
+    setExclusions((current) => [...current, zone]);
+  }, []);
+
+  const removeExclusion = useCallback((index: number) => {
+    setExclusions((current) => current.filter((_, i) => i !== index));
+  }, []);
+
+  const clearExclusions = useCallback(() => setExclusions([]), []);
 
   const clearAoi = useCallback(() => {
     aoiRef.current = null;
@@ -199,6 +222,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setIsDrawing,
         applyAoi,
         clearAoi,
+        exclusions,
+        addExclusion,
+        removeExclusion,
+        clearExclusions,
         from,
         to,
         setFrom,

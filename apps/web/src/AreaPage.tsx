@@ -8,6 +8,7 @@ import {
 import { useMemo, useState } from "react";
 import { AccordionContext } from "./AccordionContext.js";
 import { AoiPanel } from "./AoiPanel.js";
+import { ExclusionPanel } from "./ExclusionPanel.js";
 import { useMapControls } from "./MapLayout.js";
 import { useProject } from "./ProjectContext.js";
 
@@ -18,8 +19,10 @@ import { useProject } from "./ProjectContext.js";
  * separate act from tuning how deep it goes.
  */
 export function AreaPage() {
-  const { aoi, isDrawing, applyAoi, clearAoi } = useProject();
-  const { startDraw, stopDraw, isEditing, startEdit, stopEdit, editError } = useMapControls();
+  const { aoi, isDrawing, applyAoi, clearAoi, exclusions, removeExclusion, clearExclusions } =
+    useProject();
+  const { startDraw, drawTarget, stopDraw, isEditing, startEdit, stopEdit, editError } =
+    useMapControls();
   const [activeSection, setActiveSection] = useState("aoi");
   const [note, setNote] = useState<string | null>(null);
 
@@ -67,14 +70,21 @@ export function AreaPage() {
         areaKm2={areaKm2}
         envelopeKm2={envelopeKm2}
         limitCheck={limitCheck}
-        isDrawing={isDrawing}
+        isDrawing={isDrawing && drawTarget === "aoi"}
         isEditing={isEditing}
         note={note}
         editError={editError}
-        onStartDraw={startDraw}
+        onStartDraw={() => startDraw("aoi")}
         onToggleEdit={isEditing ? stopEdit : startEdit}
         onClear={handleClear}
         onPasteApply={handlePasteApply}
+      />
+      <ExclusionPanel
+        zones={exclusions}
+        isDrawing={isDrawing && drawTarget === "exclusion"}
+        onStartDraw={() => startDraw("exclusion")}
+        onRemove={removeExclusion}
+        onClearAll={clearExclusions}
       />
     </AccordionContext.Provider>
   );

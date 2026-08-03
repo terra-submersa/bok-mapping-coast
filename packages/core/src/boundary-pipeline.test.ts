@@ -10,6 +10,7 @@ import { unionPolygons } from "./merge.js";
 import { toMultiPolygon } from "./polygonal.js";
 import { contourRings } from "./rings.js";
 import { simplifyContour } from "./simplify.js";
+import { subtractZones } from "./zones.js";
 
 /**
  * End-to-end over the whole boundary chain, in the order `MapView` runs it.
@@ -64,6 +65,11 @@ function asExported(boundary: GeoJSON.MultiPolygon): GeoJSON.MultiPolygon {
  * Its envelope is the whole of `AOI`, so anything this excludes is something
  * only a polygon AOI can exclude (D10).
  */
+/** How many holes the boundary carries — what `<innerBoundaryIs>` has to convey. */
+function interiorRingCount(boundary: GeoJSON.MultiPolygon): number {
+  return boundary.coordinates.reduce((total, piece) => total + piece.length - 1, 0);
+}
+
 const DIAGONAL_AOI: Aoi = {
   type: "Polygon",
   coordinates: [
@@ -91,12 +97,14 @@ function buildBoundary({
   coastMetres = 50_000,
   tolerance = 0,
   aoi = rectangleAoi(AOI),
+  exclusions = [],
 }: {
   threshold?: number;
   bufferMetres?: number;
   coastMetres?: number;
   tolerance?: number;
   aoi?: Aoi;
+  exclusions?: GeoJSON.Polygon[];
 } = {}): GeoJSON.MultiPolygon {
   const grid = kiladhaGrid();
 
@@ -111,7 +119,9 @@ function buildBoundary({
   const ribbon = coastalRibbon(landMask(grid), coastMetres, aoi);
   const merged = ribbon ? unionPolygons(buffered, ribbon) : buffered;
 
-  return simplifyContour(clipToAoi(merged, aoi), tolerance);
+  // Exclusions last, *after* simplification — see `zones.ts`. Simplifying a cut
+  // moves its vertices by up to `tolerance`, which reopens it.
+  return subtractZones(simplifyContour(clipToAoi(merged, aoi), tolerance), exclusions);
 }
 
 describe("the boundary pipeline", () => {
@@ -163,6 +173,51 @@ describe("the boundary pipeline", () => {
     expect(booleanPointInPolygon([4.2, 0.6], boundary)).toBe(true);
     expect(booleanPointInPolygon([4.9, 5], boundary)).toBe(true);
     expect(booleanPointInPolygon([1, 1], asExported(boundary))).toBe(false);
+  });
+
+  describe("with an exclusion zone (issue #17)", () => {
+    /** Open water off the mainland, well inside the boundary — a harbour, say. */
+    const harbour: GeoJSON.Polygon = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [4, 0.4],
+          [4.6, 0.4],
+          [4.6, 0.9],
+          [4, 0.9],
+          [4, 0.4],
+        ],
+      ],
+    };
+
+    it("cuts the zone out of the boundary", () => {
+      const boundary = buildBoundary({ exclusions: [harbour] });
+      expect(booleanPointInPolygon([4.3, 0.6], boundary)).toBe(false);
+      // Water just outside the zone is still surveyed.
+      expect(booleanPointInPolygon([4.3, 1.2], boundary)).toBe(true);
+    });
+
+    it("keeps the cut exact at every tolerance", () => {
+      // The ordering regression. Cut before simplifying and Douglas-Peucker walks
+      // the notch back by up to `tolerance` — silently re-including the harbour at
+      // exactly the settings a Planner reaches for to get under the vertex ceiling.
+      for (const tolerance of [0, 500, 2_000, 10_000]) {
+        const boundary = buildBoundary({ tolerance, exclusions: [harbour] });
+        expect(booleanPointInPolygon([4.3, 0.6], boundary)).toBe(false);
+      }
+    });
+
+    it("is an interior hole, which is why the export had to stop dropping them", () => {
+      const boundary = buildBoundary({ exclusions: [harbour] });
+
+      // The zone is surrounded by survey area, so the cut is a hole and not a notch.
+      expect(interiorRingCount(boundary)).toBeGreaterThan(0);
+
+      // And read the way `boundaryKml` used to read it — outer rings only — the
+      // harbour is back inside the mission. That is the failure #39 fixes, pinned
+      // here so the two stories cannot drift apart.
+      expect(booleanPointInPolygon([4.3, 0.6], asExported(boundary))).toBe(true);
+    });
   });
 
   describe("with a non-rectangular AOI (D10)", () => {

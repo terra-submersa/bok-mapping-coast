@@ -42,3 +42,4 @@ export {
 } from "./rings.js";
 export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
+export { addZones, subtractZones } from "./zones.js";

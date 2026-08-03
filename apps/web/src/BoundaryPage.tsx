@@ -44,10 +44,19 @@ export function BoundaryPage() {
     setSelectedAnchor,
     allRingsSelected,
     setAllRingsSelected,
+    exclusions,
   } = useProject();
 
-  const { contour, rings, selectedRing, combinedStats, bufferedStats, mergedPolygon, boundary } =
-    useBoundaryState();
+  const {
+    contour,
+    rings,
+    selectedRing,
+    combinedStats,
+    bufferedStats,
+    mergedPolygon,
+    simplified,
+    boundary,
+  } = useBoundaryState();
 
   const [activeSection, setActiveSection] = useState("depth");
 
@@ -116,8 +125,10 @@ export function BoundaryPage() {
           tolerance={tolerance}
           onToleranceChange={setTolerance}
           originalVertices={mergedPolygon ? countVertices(mergedPolygon) : 0}
-          simplifiedVertices={boundary ? countVertices(boundary) : 0}
+          simplifiedVertices={simplified ? countVertices(simplified) : 0}
           ringCount={boundary?.coordinates.length ?? 0}
+          exportedVertices={boundary ? countVertices(boundary) : 0}
+          zoneCount={exclusions.length}
         />
       )}
       {selectedRing && threshold !== null && (

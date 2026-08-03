@@ -32,6 +32,7 @@ const DEPTH_SOURCE_ID = "depth";
 const DEPTH_LAYER_ID = "depth-raster";
 const RINGS_SOURCE_ID = "rings";
 const BOUNDARY_SOURCE_ID = "boundary";
+const ZONES_SOURCE_ID = "zones";
 
 /**
  * How close a shift-click has to land to count as "on" a vertex. A screen distance,
@@ -96,6 +97,15 @@ function boundaryFeature(
   };
 }
 
+function zonesFeatureCollection(
+  zones: GeoJSON.Polygon[],
+): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  return {
+    type: "FeatureCollection",
+    features: zones.map((geometry) => ({ type: "Feature", properties: {}, geometry })),
+  };
+}
+
 function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   if (!aoi) return emptyFeatureCollection();
   return {
@@ -105,8 +115,12 @@ function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSO
 }
 
 /** The drawing controls a sidebar panel needs. The map instance itself stays private. */
+/** What a new polygon becomes when the Planner finishes drawing it. */
+export type DrawTarget = "aoi" | "exclusion";
+
 export interface MapContextValue {
-  startDraw: () => void;
+  startDraw: (target: DrawTarget) => void;
+  drawTarget: DrawTarget | null;
   stopDraw: () => void;
   /** Reshaping mode: drag a corner, click a midpoint to insert, shift-click to delete. */
   isEditing: boolean;
@@ -147,6 +161,7 @@ function MapSurface() {
   const drawRef = useRef<TerraDraw | null>(null);
   const [overlaysReady, setOverlaysReady] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [drawTarget, setDrawTarget] = useState<DrawTarget | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   const {
@@ -160,6 +175,8 @@ function MapSurface() {
     setSelectedAnchor,
     setAllRingsSelected,
     allRingsSelected,
+    exclusions,
+    addExclusion,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
 
@@ -170,6 +187,7 @@ function MapSurface() {
   const isEditingRef = useRef(isEditing);
   /** terra-draw's id for the AOI while it is being reshaped. */
   const editedFeatureRef = useRef<string | number | undefined>(undefined);
+  const drawTargetRef = useRef<DrawTarget | null>(drawTarget);
   useEffect(() => {
     isDrawingRef.current = isDrawing;
   }, [isDrawing]);
@@ -182,6 +200,9 @@ function MapSurface() {
   useEffect(() => {
     isEditingRef.current = isEditing;
   }, [isEditing]);
+  useEffect(() => {
+    drawTargetRef.current = drawTarget;
+  }, [drawTarget]);
 
   /** Paints the active layer (depth or scene count) into an image source pinned to its own bbox corners. */
   function paintLayer(next: Composite, mode: LayerView) {
@@ -273,10 +294,22 @@ function MapSurface() {
       if (feature?.geometry.type !== "Polygon") return;
 
       if (context.action === "draw") {
-        // A freshly drawn shape. Keep it in the store rather than clearing it, so
-        // the Planner can go straight on to reshaping it.
-        editedFeatureRef.current = id;
+        const target = drawTargetRef.current;
         setIsDrawing(false);
+        setDrawTarget(null);
+
+        if (target === "exclusion") {
+          // Zones are a list, not the one shape being reshaped, so terra-draw's copy
+          // goes; the map renders them from state like the AOI outside edit mode.
+          draw.clear();
+          draw.stop();
+          addExclusion(feature.geometry);
+          return;
+        }
+
+        // A freshly drawn AOI. Kept in the store rather than cleared, so the Planner
+        // can go straight on to reshaping it.
+        editedFeatureRef.current = id;
         setIsEditing(true);
         draw.setMode("select");
         applyAoi(feature.geometry);
@@ -349,6 +382,22 @@ function MapSurface() {
         type: "line",
         source: BOUNDARY_SOURCE_ID,
         paint: { "line-color": "#2e7d32", "line-width": 3 },
+      });
+
+      // Exclusion zones, drawn over the boundary: a cut has to be legible against
+      // the green it is taken out of (issue #17).
+      map.addSource(ZONES_SOURCE_ID, { type: "geojson", data: emptyFeatureCollection() });
+      map.addLayer({
+        id: "zones-fill",
+        type: "fill",
+        source: ZONES_SOURCE_ID,
+        paint: { "fill-color": "#c62828", "fill-opacity": 0.3 },
+      });
+      map.addLayer({
+        id: "zones-outline",
+        type: "line",
+        source: ZONES_SOURCE_ID,
+        paint: { "line-color": "#c62828", "line-width": 2, "line-dasharray": [2, 1] },
       });
 
       map.on("mouseenter", "rings-fill", () => {
@@ -429,6 +478,12 @@ function MapSurface() {
     source?.setData(boundaryFeature(boundary));
   }, [overlaysReady, boundary]);
 
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(ZONES_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(zonesFeatureCollection(exclusions));
+  }, [overlaysReady, exclusions]);
+
   // Dropping the composite has to take its layer with it, or a stale depth ramp stays
   // painted over an AOI it no longer belongs to — the bug issue #2's closing note is about.
   // biome-ignore lint/correctness/useExhaustiveDependencies: paintLayer is redefined every render and reads opacity from render scope on purpose — see the opacity effect below for live updates
@@ -463,20 +518,24 @@ function MapSurface() {
   }
 
   const controls: MapContextValue = {
-    startDraw: () => {
+    startDraw: (target: DrawTarget) => {
       const draw = drawRef.current;
       if (!draw) return;
       leaveEditing();
+      drawTargetRef.current = target;
+      setDrawTarget(target);
       draw.start();
       draw.setMode("polygon");
       setIsDrawing(true);
     },
+    drawTarget,
     stopDraw: () => {
       const draw = drawRef.current;
       if (!draw || !isDrawing) return;
       draw.clear();
       draw.stop();
       setIsDrawing(false);
+      setDrawTarget(null);
     },
     isEditing,
     startEdit: () => {

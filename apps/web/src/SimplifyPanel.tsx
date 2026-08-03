@@ -11,6 +11,9 @@ export interface SimplifyPanelProps {
   originalVertices: number;
   simplifiedVertices: number;
   ringCount: number;
+  /** Vertices the exported boundary actually carries, once exclusion zones are cut. */
+  exportedVertices: number;
+  zoneCount: number;
 }
 
 export function SimplifyPanel({
@@ -22,6 +25,8 @@ export function SimplifyPanel({
   onToleranceChange,
   originalVertices,
   simplifiedVertices,
+  exportedVertices,
+  zoneCount,
   ringCount,
 }: SimplifyPanelProps) {
   const overCeiling = simplifiedVertices > PILOT2_VERTEX_CEILING;
@@ -77,6 +82,17 @@ export function SimplifyPanel({
           </p>
         ) : (
           <p className="hint">Within the {PILOT2_VERTEX_CEILING}-vertex ceiling.</p>
+        )}
+        {zoneCount > 0 && (
+          // Zones are cut *after* simplification, so an exclusion must be exact at
+          // every tolerance (issue #17). The price is that its edges are not
+          // simplified and this slider cannot reduce them — worth saying, because the
+          // export otherwise reports a number this panel never showed.
+          <p className="hint">
+            {zoneCount} exclusion zone{zoneCount === 1 ? "" : "s"} adds{" "}
+            {Math.max(exportedVertices - simplifiedVertices, 0).toLocaleString()} vertices the
+            tolerance cannot reduce — {exportedVertices.toLocaleString()} are exported.
+          </p>
         )}
 
         <p className="hint">

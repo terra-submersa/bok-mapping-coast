@@ -10,6 +10,7 @@ import {
   rectangleAoi,
   shallowWaterContour,
   simplifyContour,
+  subtractZones,
   toMultiPolygon,
   unionPolygons,
 } from "@bok/core";
@@ -43,6 +44,8 @@ export interface BoundaryState {
   bufferedPolygon: GeoJSON.MultiPolygon | null;
   bufferedStats: PolygonStats;
   mergedPolygon: GeoJSON.MultiPolygon | null;
+  /** Before the hand-drawn cuts — what the tolerance slider's counts are about. */
+  simplified: GeoJSON.MultiPolygon | null;
   boundary: GeoJSON.MultiPolygon | null;
 }
 
@@ -59,6 +62,7 @@ export interface BoundaryState {
 export function useBoundary(): BoundaryState {
   const {
     aoi,
+    exclusions,
     composite,
     threshold,
     tolerance,
@@ -188,9 +192,24 @@ export function useBoundary(): BoundaryState {
     return clipToAoi(mergedPolygon, effectiveAoi);
   }, [mergedPolygon, effectiveAoi]);
 
-  const boundary = useMemo(
+  const simplified = useMemo(
     () => (clippedPolygon ? simplifyContour(clippedPolygon, tolerance) : null),
     [clippedPolygon, tolerance],
+  );
+
+  /**
+   * Hand-drawn cuts, applied **after** simplification (issue #17).
+   *
+   * Douglas-Peucker moves vertices by up to `tolerance`, so simplifying a cut would
+   * reopen it by up to that distance. An exclusion is a safety constraint — the
+   * moorings, the swimming area — and has to hold exactly at every tolerance, so it
+   * goes last. The cost is that zone edges are not simplified and the tolerance
+   * slider cannot reduce their vertices; `zones.ts` explains why that is the cheaper
+   * side of the trade.
+   */
+  const boundary = useMemo(
+    () => (simplified ? subtractZones(simplified, exclusions) : null),
+    [simplified, exclusions],
   );
 
   return {
@@ -202,6 +221,7 @@ export function useBoundary(): BoundaryState {
     bufferedPolygon,
     bufferedStats,
     mergedPolygon,
+    simplified,
     boundary,
   };
 }
