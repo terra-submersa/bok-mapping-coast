@@ -1,36 +1,27 @@
 import { feature, featureCollection, union as turfUnion } from "@turf/turf";
-import { largestPolygon } from "./rings.js";
-
-type Polygonal = GeoJSON.Polygon | GeoJSON.MultiPolygon;
-
-function toMultiPolygon(geometry: Polygonal): GeoJSON.MultiPolygon {
-  return geometry.type === "Polygon"
-    ? { type: "MultiPolygon", coordinates: [geometry.coordinates] }
-    : geometry;
-}
-
-const EMPTY_POLYGON: GeoJSON.Polygon = { type: "Polygon", coordinates: [] };
+import { type Polygonal, toMultiPolygon } from "./polygonal.js";
 
 /**
- * Merges two flight-boundary candidates into the one simple polygon Pilot 2
- * gets — e.g. the buffered/selected depth-contour ring and the coastal
- * ribbon that guarantees continuous near-shore coverage regardless of
- * contour gaps (issue #27). The ribbon can itself be several disjoint
- * pieces, one per landmass (issue #31), so either input may be a `Polygon`
- * or a `MultiPolygon`.
+ * Merges two flight-boundary candidates — e.g. the buffered/selected
+ * depth-contour ring and the coastal ribbon that guarantees continuous
+ * near-shore coverage regardless of contour gaps (issue #27). Either input
+ * may be a `Polygon` or a `MultiPolygon`: the ribbon is one piece per
+ * landmass (issue #31), and "All rings" unions several contour rings.
  *
- * If the union splits into disjoint pieces, the largest by area wins — same
- * reasoning as `bufferPolygon` — and this is the only place that happens:
- * holes are otherwise kept, not dropped, since they can be meaningful in
- * their own right (a genuinely deep patch inside an otherwise shallow depth
- * contour, say) — only the boundary's very last step drops them.
+ * Every disjoint piece survives, and so does every hole (issue #33). This
+ * used to end in `largestPolygon`, on the reasoning that Pilot 2 wants one
+ * simple polygon — but a bay with an island and two separate stretches of
+ * coast is genuinely several survey areas, and discarding all but the biggest
+ * four steps before the export made the boundary quietly wrong rather than
+ * simple. The one-polygon-per-Placemark concern belongs at the export, where
+ * `boundaryKml` now writes one Placemark per piece.
  */
-export function unionPolygons(a: Polygonal, b: Polygonal): GeoJSON.Polygon {
-  if (a.coordinates.length === 0) return largestPolygon(toMultiPolygon(b), 0) ?? EMPTY_POLYGON;
-  if (b.coordinates.length === 0) return largestPolygon(toMultiPolygon(a), 0) ?? EMPTY_POLYGON;
+export function unionPolygons(a: Polygonal, b: Polygonal): GeoJSON.MultiPolygon {
+  if (a.coordinates.length === 0) return toMultiPolygon(b);
+  if (b.coordinates.length === 0) return toMultiPolygon(a);
 
-  const merged = turfUnion(featureCollection([feature(a), feature(b)]));
-  if (!merged) return largestPolygon(toMultiPolygon(a), 0) ?? EMPTY_POLYGON;
+  const merged = turfUnion(featureCollection<Polygonal>([feature(a), feature(b)]));
+  if (!merged) return toMultiPolygon(a);
 
-  return largestPolygon(toMultiPolygon(merged.geometry), 0) ?? EMPTY_POLYGON;
+  return toMultiPolygon(merged.geometry);
 }

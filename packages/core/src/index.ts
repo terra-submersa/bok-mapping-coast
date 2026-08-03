@@ -12,6 +12,7 @@ export {
   shallowWaterContour,
 } from "./contour.js";
 export { unionPolygons } from "./merge.js";
+export { type Polygonal, toMultiPolygon } from "./polygonal.js";
 export {
   checkProcessingApiLimit,
   PROCESSING_API_MAX_SIDE_PX,

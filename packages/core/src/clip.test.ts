@@ -2,6 +2,7 @@ import { booleanPointInPolygon } from "@turf/turf";
 import { describe, expect, it } from "vitest";
 import type { BBox } from "./bbox.js";
 import { clipToBbox } from "./clip.js";
+import { toMultiPolygon } from "./polygonal.js";
 
 function square(lon: number, lat: number, size: number): GeoJSON.Polygon {
   return {
@@ -36,7 +37,7 @@ describe("clipToBbox", () => {
     const bbox: BBox = [23.0, 37.0, 24.0, 38.0];
     const inside = square(23.1, 37.4, 0.01);
 
-    expect(clipToBbox(inside, bbox)).toEqual(inside);
+    expect(clipToBbox(inside, bbox)).toEqual(toMultiPolygon(inside));
   });
 
   it("handles an empty polygon", () => {
@@ -72,5 +73,38 @@ describe("clipToBbox", () => {
 
     expect(booleanPointInPolygon([23.5, 37.5], clipped)).toBe(false);
     expect(booleanPointInPolygon([23.1, 37.1], clipped)).toBe(true);
+  });
+
+  it("keeps every piece of a multi-piece boundary (issue #33)", () => {
+    const bbox: BBox = [23.0, 37.0, 24.0, 38.0];
+    const multi: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [
+        square(23.1, 37.1, 0.05).coordinates,
+        // Overflows the east edge, so it is clipped rather than passed through.
+        square(23.95, 37.5, 0.2).coordinates,
+      ],
+    };
+
+    const clipped = clipToBbox(multi, bbox);
+
+    expect(clipped.coordinates).toHaveLength(2);
+    expect(booleanPointInPolygon([23.12, 37.12], clipped)).toBe(true);
+    expect(booleanPointInPolygon([23.98, 37.55], clipped)).toBe(true);
+    // ... and the overflow is still gone.
+    expect(booleanPointInPolygon([24.05, 37.55], clipped)).toBe(false);
+  });
+
+  it("drops a piece the clip shaves down to nothing", () => {
+    const bbox: BBox = [23.0, 37.0, 24.0, 38.0];
+    const multi: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [square(23.1, 37.1, 0.05).coordinates, square(30, 30, 1).coordinates],
+    };
+
+    const clipped = clipToBbox(multi, bbox);
+
+    expect(clipped.coordinates).toHaveLength(1);
+    expect(booleanPointInPolygon([23.12, 37.12], clipped)).toBe(true);
   });
 });

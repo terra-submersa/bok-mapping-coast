@@ -3,9 +3,11 @@ import { boundaryKml } from "@bok/dji";
 import { CollapsibleSection } from "./CollapsibleSection.js";
 
 export interface ExportPanelProps {
-  /** Final flight boundary: selected ring, buffered, then simplified. Null if
-   * the selected ring collapsed under simplification. */
-  boundary: GeoJSON.Polygon | null;
+  /** Final flight boundary: selected ring(s) unioned with the coastal ribbon,
+   * buffered, clipped, then simplified. Several disjoint pieces is the normal
+   * case — one per coastline or shallow patch (issue #33). Null if everything
+   * collapsed under simplification. */
+  boundary: GeoJSON.MultiPolygon | null;
   /** Other candidate rings not exported — see the ring selection panel. */
   otherRingCount: number;
   threshold: number;
@@ -62,7 +64,9 @@ export function ExportPanel({
       <div className="stat">
         {boundary ? (
           <div>
-            {countVertices(boundary).toLocaleString()} vertices
+            {countVertices(boundary).toLocaleString()} vertices ·{" "}
+            {boundary.coordinates.length.toLocaleString()} piece
+            {boundary.coordinates.length === 1 ? "" : "s"}
             {otherRingCount > 0 &&
               ` · ${otherRingCount} other ring${otherRingCount === 1 ? "" : "s"} not exported`}
           </div>
@@ -73,11 +77,20 @@ export function ExportPanel({
         )}
 
         <p className="hint">
-          Pilot 2 takes one simple polygon: the ring(s) chosen above, buffered, then simplified.
+          The ring(s) chosen above unioned with the coastal ribbon, buffered, then simplified. Each
+          disjoint piece — a separate stretch of coast, an island, a detached shallow patch — is
+          exported as its own Placemark.
         </p>
         <p className="error">
           Not yet flown. This KML is written from the OGC spec, not from a Pilot 2 export — it must
           be round-tripped on the actual RC before you rely on it in the field.
+          {boundary && boundary.coordinates.length > 1 && (
+            <>
+              {" "}
+              This export has several Placemarks, which is especially unproven: whether Pilot 2
+              reads them as several survey areas, takes the first, or rejects the file is unknown.
+            </>
+          )}
         </p>
       </div>
     </CollapsibleSection>

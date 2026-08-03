@@ -16,6 +16,7 @@ import {
   sameBbox,
   shallowWaterContour,
   simplifyContour,
+  toMultiPolygon,
   unionPolygons,
 } from "@bok/core";
 import {
@@ -106,14 +107,30 @@ function ringsFeatureCollection(
 }
 
 function boundaryFeature(
-  polygon: GeoJSON.Polygon | null,
-): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  geometry: GeoJSON.MultiPolygon | null,
+): GeoJSON.FeatureCollection<GeoJSON.MultiPolygon> {
   return {
     type: "FeatureCollection",
     features:
-      polygon && polygon.coordinates.length > 0
-        ? [{ type: "Feature", properties: {}, geometry: polygon }]
+      geometry && geometry.coordinates.length > 0
+        ? [{ type: "Feature", properties: {}, geometry }]
         : [],
+  };
+}
+
+/**
+ * Vertex and area totals across *every* piece. The buffer panel used to read
+ * these off the largest ring alone, which understated a boundary made of
+ * several disjoint survey areas (issue #33).
+ */
+function polygonStats(geometry: GeoJSON.MultiPolygon | null): {
+  vertexCount: number;
+  areaM2: number;
+} {
+  if (!geometry || geometry.coordinates.length === 0) return { vertexCount: 0, areaM2: 0 };
+  return {
+    vertexCount: countVertices(geometry),
+    areaM2: contourRings(geometry, 0).reduce((total, ring) => total + ring.areaM2, 0),
   };
 }
 
@@ -517,21 +534,17 @@ export function MapView() {
    * every ring unioned together when the Planner picked "All rings" — e.g. a
    * survey area that a Posidonia gap split into a few adjacent fragments.
    */
-  const combinedPolygon = useMemo(() => {
-    if (!allRingsSelected) return selectedRing?.polygon ?? null;
+  const combinedPolygon = useMemo<GeoJSON.MultiPolygon | null>(() => {
+    if (!allRingsSelected) return selectedRing ? toMultiPolygon(selectedRing.polygon) : null;
     if (rings.length === 0) return null;
-    return rings.map((ring) => ring.polygon).reduce((acc, polygon) => unionPolygons(acc, polygon));
+    return rings
+      .map((ring) => toMultiPolygon(ring.polygon))
+      .reduce((acc, polygon) => unionPolygons(acc, polygon));
   }, [allRingsSelected, selectedRing, rings]);
 
   /** Stats for the buffer step's "before" column — the combined ring(s) as
    * picked above, unbuffered. */
-  const combinedRingInfo = useMemo(() => {
-    if (!allRingsSelected) return selectedRing;
-    if (!combinedPolygon || combinedPolygon.coordinates.length === 0) return null;
-    return (
-      contourRings({ type: "MultiPolygon", coordinates: [combinedPolygon.coordinates] })[0] ?? null
-    );
-  }, [allRingsSelected, combinedPolygon, selectedRing]);
+  const combinedStats = useMemo(() => polygonStats(combinedPolygon), [combinedPolygon]);
 
   /**
    * Grown outward so flight lines reach past the raw contour and catch
@@ -544,12 +557,7 @@ export function MapView() {
     [combinedPolygon, bufferMetres],
   );
 
-  const bufferedRingInfo = useMemo(() => {
-    if (!bufferedPolygon || bufferedPolygon.coordinates.length === 0) return null;
-    return (
-      contourRings({ type: "MultiPolygon", coordinates: [bufferedPolygon.coordinates] })[0] ?? null
-    );
-  }, [bufferedPolygon]);
+  const bufferedStats = useMemo(() => polygonStats(bufferedPolygon), [bufferedPolygon]);
 
   /**
    * The composite's land/no-data mask, standing in for a coastline since the
@@ -569,9 +577,9 @@ export function MapView() {
   );
 
   /**
-   * The depth-contour ring and the coastal ribbon, merged into the one simple
-   * polygon Pilot 2 needs. Derived, never applied in place, same as the
-   * buffer step above.
+   * The depth-contour ring and the coastal ribbon, merged. Every disjoint
+   * piece survives to the export as its own Placemark (issue #33). Derived,
+   * never applied in place, same as the buffer step above.
    */
   const mergedPolygon = useMemo(() => {
     if (!bufferedPolygon) return null;
@@ -579,11 +587,11 @@ export function MapView() {
   }, [bufferedPolygon, ribbon]);
 
   /**
-   * The buffer and coastal-ribbon steps grow geometry outward in unbounded
-   * space, so wherever the raw contour or land mask touches the AOI's edge,
-   * the grown result juts past it (issue #29). Clipping back to the AOI here
-   * — after the union, equivalent to clipping each side beforehand — restores
-   * that edge as the boundary's hard limit.
+   * The buffer step grows geometry outward in unbounded space, so wherever
+   * the raw contour touches the AOI's edge, the grown result juts past it
+   * (issue #29). Clipping back to the AOI here — after the union, equivalent
+   * to clipping each side beforehand — restores that edge as the boundary's
+   * hard limit. (The ribbon arrives already bounded, since issue #32.)
    */
   const clippedPolygon = useMemo(() => {
     if (!mergedPolygon || !bbox) return mergedPolygon;
@@ -674,10 +682,10 @@ export function MapView() {
             <BufferPanel
               metres={bufferMetres}
               onMetresChange={setBufferMetres}
-              beforeVertices={combinedRingInfo?.vertexCount ?? 0}
-              beforeAreaM2={combinedRingInfo?.areaM2 ?? 0}
-              afterVertices={bufferedRingInfo?.vertexCount ?? 0}
-              afterAreaM2={bufferedRingInfo?.areaM2 ?? 0}
+              beforeVertices={combinedStats.vertexCount}
+              beforeAreaM2={combinedStats.areaM2}
+              afterVertices={bufferedStats.vertexCount}
+              afterAreaM2={bufferedStats.areaM2}
             />
           )}
           {threshold !== null && (
@@ -690,7 +698,7 @@ export function MapView() {
               onToleranceChange={setTolerance}
               originalVertices={mergedPolygon ? countVertices(mergedPolygon) : 0}
               simplifiedVertices={boundary ? countVertices(boundary) : 0}
-              ringCount={boundary && boundary.coordinates.length > 0 ? 1 : 0}
+              ringCount={boundary?.coordinates.length ?? 0}
             />
           )}
           {selectedRing && threshold !== null && (

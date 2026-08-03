@@ -1,4 +1,5 @@
 import { simplify } from "@turf/turf";
+import { cloneMultiPolygon } from "./polygonal.js";
 
 /**
  * Vertex ceiling above which Pilot 2 is expected to struggle.
@@ -20,16 +21,6 @@ const DEGREES_PER_METRE = 1 / 111_320;
  * simplification stays non-destructive and the tolerance can be re-dragged
  * without recomputing the composite.
  */
-/** Deep copy. Coordinates are plain numbers, so this needs nothing clever. */
-function cloneMultiPolygon(geometry: GeoJSON.MultiPolygon): GeoJSON.MultiPolygon {
-  return {
-    type: "MultiPolygon",
-    coordinates: geometry.coordinates.map((polygon) =>
-      polygon.map((ring) => ring.map((position) => [...position])),
-    ),
-  };
-}
-
 export function simplifyContour(
   geometry: GeoJSON.MultiPolygon,
   toleranceMetres: number,
