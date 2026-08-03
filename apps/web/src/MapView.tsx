@@ -562,8 +562,10 @@ export function MapView() {
    * guaranteeing near-shore coverage even where the depth contour has a gap.
    */
   const ribbon = useMemo(
-    () => (land ? coastalRibbon(land, coastMetres) : null),
-    [land, coastMetres],
+    // The composite's own bbox, not the AOI state: `land` is traced from that
+    // grid, so that is the rectangle its artificial cuts lie on (issue #32).
+    () => (land && composite ? coastalRibbon(land, coastMetres, composite.bbox) : null),
+    [land, composite, coastMetres],
   );
 
   /**
