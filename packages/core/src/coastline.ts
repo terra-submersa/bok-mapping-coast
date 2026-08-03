@@ -1,10 +1,12 @@
 import {
+  area,
   bboxPolygon,
   feature,
   featureCollection,
   buffer as turfBuffer,
   difference as turfDifference,
   intersect as turfIntersect,
+  polygon as turfPolygon,
 } from "@turf/turf";
 import { contours } from "d3-contour";
 import type { BBox } from "./bbox.js";
@@ -15,16 +17,38 @@ import { gridToLonLat } from "./contour.js";
 type Polygonal = GeoJSON.Polygon | GeoJSON.MultiPolygon;
 
 /**
+ * Below this, a "landmass" is a no-data speck, not geography: one permanently
+ * cloudy pixel, a sensor dropout, a boat. ~10 pixels' worth of area at the
+ * 10 m resolution of the bands used for Stumpf (issue #34).
+ *
+ * Deliberately stricter than `MIN_RING_AREA_M2`, because a speck costs more
+ * here. A spurious contour ring is just one more candidate the Planner does
+ * not pick; a spurious landmass grows its own coastal ribbon, punching a
+ * donut of survey area into open water that nobody asked to fly.
+ *
+ * The accepted trade is that a genuinely tiny islet — a rock ~30 m across —
+ * is read as water and gets no ribbon of its own. It still gets flown if it
+ * falls inside the boundary, which for a rock that size is the right answer.
+ */
+export const MIN_LANDMASS_AREA_M2 = 1_000;
+
+export interface LandMaskOptions extends ContourOptions {
+  /** Landmasses smaller than this are dropped as speckle (issue #34). */
+  minLandmassAreaM2?: number;
+}
+
+/**
  * Traces land: pixels with too few contributing scenes to call water at all.
  * This is the same `sceneCount` gate `shallowWaterContour` uses to keep land
  * out of the survey polygon, inverted — there is no coastline data source in
  * the repo, so this raster mask is the coastline proxy (issue #27). It also
- * catches permanent cloud and no-data pixels, which is an accepted limitation:
- * they get treated as "coast" too.
+ * catches permanent cloud and no-data pixels, which is why anything below
+ * `minLandmassAreaM2` is dropped: those specks are not coast, and letting
+ * them through would litter the boundary with tiny ribbons (issue #34).
  */
 export function landMask(
   grid: RatioGrid,
-  { minSceneCount = 1 }: ContourOptions = {},
+  { minSceneCount = 1, minLandmassAreaM2 = MIN_LANDMASS_AREA_M2 }: LandMaskOptions = {},
 ): GeoJSON.MultiPolygon {
   const { width, height, sceneCount } = grid;
 
@@ -38,9 +62,13 @@ export function landMask(
 
   return {
     type: "MultiPolygon",
-    coordinates: multiPolygon.coordinates.map((polygon) =>
-      polygon.map((ring) => ring.map(([x, y]) => gridToLonLat(x, y, grid))),
-    ),
+    coordinates: multiPolygon.coordinates
+      .map((polygon) => polygon.map((ring) => ring.map(([x, y]) => gridToLonLat(x, y, grid))))
+      .filter((polygon) => {
+        const ring = polygon[0];
+        if (!ring || ring.length < 4) return false;
+        return area(turfPolygon([ring])) >= minLandmassAreaM2;
+      }),
   };
 }
 

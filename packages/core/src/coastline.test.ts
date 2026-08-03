@@ -52,6 +52,27 @@ function positions(geometry: GeoJSON.MultiPolygon): GeoJSON.Position[] {
   return geometry.coordinates.flat(2);
 }
 
+/**
+ * A grid at Kiladha's real scale: 100x100 over ~0.01°, so a cell is ~8.8 x
+ * 11.1 m — Sentinel-2's 10 m bands. Needed for the area-threshold tests,
+ * where the degree-sized fixtures above are meaninglessly large.
+ */
+const REALISTIC_AOI: BBox = [23.1, 37.4, 23.11, 37.41];
+
+function realisticGrid(isLand: (x: number, y: number) => boolean): RatioGrid {
+  const sceneCount: number[] = [];
+  for (let y = 0; y < 100; y++) {
+    for (let x = 0; x < 100; x++) sceneCount.push(isLand(x, y) ? 0 : 10);
+  }
+  return {
+    width: 100,
+    height: 100,
+    ratio: sceneCount.map(() => 1),
+    sceneCount,
+    bbox: REALISTIC_AOI,
+  };
+}
+
 describe("landMask", () => {
   it("traces the land, not the water", () => {
     const land = landMask(grid(RIGHT_LAND));
@@ -70,6 +91,32 @@ describe("landMask", () => {
   it("returns an empty MultiPolygon when everything is water", () => {
     const land = landMask(grid(RIGHT_LAND.map(() => 10)));
     expect(land.coordinates).toEqual([]);
+  });
+
+  it("drops a single-pixel speck as no-data, not land (issue #34)", () => {
+    // One ~98 m² pixel: a permanently cloudy pixel or a boat, not an island.
+    const land = landMask(realisticGrid((x, y) => x === 50 && y === 50));
+    expect(land.coordinates).toEqual([]);
+  });
+
+  it("keeps an islet comfortably above the threshold (issue #34)", () => {
+    // 5x5 pixels ≈ 2,460 m², well past MIN_LANDMASS_AREA_M2.
+    const land = landMask(realisticGrid((x, y) => x >= 50 && x < 55 && y >= 50 && y < 55));
+    expect(land.coordinates).toHaveLength(1);
+    expect(booleanPointInPolygon([23.1052, 37.4048], land)).toBe(true);
+  });
+
+  it("keeps the real coastline while dropping specks around it (issue #34)", () => {
+    const land = landMask(
+      realisticGrid((x, y) => x > 70 || (x === 10 && y === 10) || (x === 20 && y === 80)),
+    );
+    // The mainland survives; both specks are gone.
+    expect(land.coordinates).toHaveLength(1);
+  });
+
+  it("honours an explicit minimum landmass area", () => {
+    const speck = (x: number, y: number) => x === 50 && y === 50;
+    expect(landMask(realisticGrid(speck), { minLandmassAreaM2: 0 }).coordinates).toHaveLength(1);
   });
 });
 
@@ -179,6 +226,22 @@ describe("coastalRibbon", () => {
 
     // The seaward side of that same coastline is still fully covered.
     expect(booleanPointInPolygon([4.1, 0.5], ribbon)).toBe(true);
+  });
+
+  it("gives no ribbon to a speck that was never land (issue #34)", () => {
+    // A lone no-data pixel in open water. Before the landmass filter this grew
+    // its own donut of survey area in the middle of nowhere — invisible while
+    // the pipeline collapsed to the largest piece, litter once it stopped.
+    const speck = landMask(realisticGrid((x, y) => x === 50 && y === 50));
+    expect(coastalRibbon(speck, 100, REALISTIC_AOI)).toBeNull();
+  });
+
+  it("still rings an islet that clears the threshold (issue #34)", () => {
+    const islet = landMask(realisticGrid((x, y) => x >= 50 && x < 55 && y >= 50 && y < 55));
+    const ribbon = coastalRibbon(islet, 100, REALISTIC_AOI);
+    expect(ribbon).not.toBeNull();
+    // Water just off the islet's west side is covered.
+    expect(booleanPointInPolygon([23.1049, 37.4048], ribbon as GeoJSON.MultiPolygon)).toBe(true);
   });
 
   it("still rings an island that lies wholly inside the AOI (issue #32)", () => {

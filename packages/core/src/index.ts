@@ -3,7 +3,12 @@ export { bboxAreaKm2, sameBbox } from "./bbox.js";
 export { parseBboxInput } from "./bbox-input.js";
 export { bufferPolygon } from "./buffer.js";
 export { clipToBbox } from "./clip.js";
-export { coastalRibbon, landMask } from "./coastline.js";
+export {
+  coastalRibbon,
+  type LandMaskOptions,
+  landMask,
+  MIN_LANDMASS_AREA_M2,
+} from "./coastline.js";
 export {
   type ContourOptions,
   countVertices,
