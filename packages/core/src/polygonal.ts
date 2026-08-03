@@ -34,3 +34,17 @@ export function cloneMultiPolygon(geometry: GeoJSON.MultiPolygon): GeoJSON.Multi
 
 /** An empty result, spelled once. */
 export const EMPTY_MULTI_POLYGON: GeoJSON.MultiPolygon = { type: "MultiPolygon", coordinates: [] };
+
+/**
+ * Every inner ring, as a polygon in its own right — the parts of the boundary that
+ * are enclosed by it but deliberately not part of it.
+ *
+ * Used to warn about the one thing in the export that is both load-bearing and
+ * unverified: an exclusion zone in the middle of the survey area reaches Pilot 2 as
+ * an `<innerBoundaryIs>`, and whether Pilot honours it is unknown (issue #39).
+ */
+export function interiorRings(geometry: Polygonal): GeoJSON.Polygon[] {
+  return toMultiPolygon(geometry).coordinates.flatMap((piece) =>
+    piece.slice(1).map((ring) => ({ type: "Polygon" as const, coordinates: [ring] })),
+  );
+}

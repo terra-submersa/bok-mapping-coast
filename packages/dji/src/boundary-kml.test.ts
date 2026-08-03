@@ -128,7 +128,11 @@ describe("boundaryKml", () => {
     expect(kml).not.toContain("1 of 1");
   });
 
-  it("drops holes per piece — Pilot 2 has no use for a cut-out island", () => {
+  // Superseded by issue #39. This used to assert the opposite — that holes were
+  // dropped, on the reasoning that a hole was a deep patch and flying over it was
+  // harmless. An exclusion zone in the middle of the survey area is also a hole, and
+  // for that one "flying over it" is the failure, not the shrug.
+  it("keeps a hole per piece, so an exclusion zone survives to the RC", () => {
     const donut: GeoJSON.MultiPolygon = {
       type: "MultiPolygon",
       coordinates: [
@@ -145,8 +149,8 @@ describe("boundaryKml", () => {
       ],
     };
     const kml = boundaryKml(donut);
-    expect(kml).not.toContain("innerBoundaryIs");
-    expect(kml.match(/<LinearRing>/g)).toHaveLength(1);
+    expect(kml).toContain("innerBoundaryIs");
+    expect(kml.match(/<LinearRing>/g)).toHaveLength(2);
   });
 
   it("skips a degenerate piece rather than failing the whole export", () => {
@@ -180,5 +184,83 @@ describe("boundaryKml", () => {
       ],
     };
     expect(() => boundaryKml(allRunts)).toThrow(/at least three/);
+  });
+});
+
+describe("boundaryKml holes (issue #39)", () => {
+  /** A square with a square bite taken out of the middle — an interior exclusion zone. */
+  const donut: GeoJSON.Polygon = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [23.1, 37.4],
+        [23.2, 37.4],
+        [23.2, 37.5],
+        [23.1, 37.5],
+        [23.1, 37.4],
+      ],
+      [
+        [23.14, 37.44],
+        [23.16, 37.44],
+        [23.16, 37.46],
+        [23.14, 37.46],
+        [23.14, 37.44],
+      ],
+    ],
+  };
+
+  it("writes an inner ring instead of dropping it", () => {
+    const kml = boundaryKml(donut);
+    expect(kml).toContain("<innerBoundaryIs>");
+    expect(kml).toContain("23.140000,37.440000,0");
+  });
+
+  it("puts outerBoundaryIs before innerBoundaryIs, as KML 2.2 requires", () => {
+    const kml = boundaryKml(donut);
+    expect(kml.indexOf("<outerBoundaryIs>")).toBeLessThan(kml.indexOf("<innerBoundaryIs>"));
+  });
+
+  it("writes one innerBoundaryIs per hole", () => {
+    const twoHoles: GeoJSON.Polygon = {
+      type: "Polygon",
+      coordinates: [
+        donut.coordinates[0],
+        donut.coordinates[1],
+        [
+          [23.11, 37.41],
+          [23.12, 37.41],
+          [23.12, 37.42],
+          [23.11, 37.41],
+        ],
+      ],
+    };
+    expect(boundaryKml(twoHoles).match(/<innerBoundaryIs>/g)).toHaveLength(2);
+  });
+
+  it("emits no innerBoundaryIs for a boundary without holes", () => {
+    const plain: GeoJSON.Polygon = { type: "Polygon", coordinates: [donut.coordinates[0]] };
+    expect(boundaryKml(plain)).not.toContain("<innerBoundaryIs>");
+  });
+
+  it("never promotes a hole to be the boundary when the outer ring is degenerate", () => {
+    // The inversion worth guarding: filtering rings piece-wide would leave the hole
+    // as index 0, exporting a survey area of exactly the shape meant to be excluded.
+    const brokenOuter: GeoJSON.MultiPolygon = {
+      type: "MultiPolygon",
+      coordinates: [[[[23.1, 37.4]], donut.coordinates[1]], [donut.coordinates[0]]],
+    };
+    const kml = boundaryKml(brokenOuter);
+    expect(kml.match(/<Placemark>/g)).toHaveLength(1);
+    expect(kml).not.toContain("23.140000,37.440000,0");
+  });
+
+  it("keeps the piece when a hole is too degenerate to be a ring", () => {
+    const degenerate: GeoJSON.Polygon = {
+      type: "Polygon",
+      coordinates: [donut.coordinates[0], [[23.14, 37.44]]],
+    };
+    const kml = boundaryKml(degenerate);
+    expect(kml).toContain("<outerBoundaryIs>");
+    expect(kml).not.toContain("<innerBoundaryIs>");
   });
 });

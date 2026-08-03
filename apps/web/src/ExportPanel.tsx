@@ -1,4 +1,4 @@
-import { countVertices } from "@bok/core";
+import { countVertices, interiorRings } from "@bok/core";
 import { boundaryKml } from "@bok/dji";
 import { CollapsibleSection } from "./CollapsibleSection.js";
 
@@ -39,6 +39,10 @@ export function ExportPanel({
   from,
   to,
 }: ExportPanelProps) {
+  // Cut-outs in the middle of the survey area. They reach Pilot 2 as
+  // <innerBoundaryIs>, which is the least proven part of the whole export (#39).
+  const holeCount = boundary ? interiorRings(boundary).length : 0;
+
   function handleExport() {
     if (!boundary) return;
     downloadKml(
@@ -89,6 +93,14 @@ export function ExportPanel({
               {" "}
               This export has several Placemarks, which is especially unproven: whether Pilot 2
               reads them as several survey areas, takes the first, or rejects the file is unknown.
+            </>
+          )}
+          {holeCount > 0 && (
+            <>
+              {" "}
+              It also contains {holeCount} cut-out{holeCount === 1 ? "" : "s"} written as an inner
+              boundary. If Pilot 2 ignores those, it will plan lines straight over the excluded area
+              — check this one on the RC before flying.
             </>
           )}
         </p>
