@@ -37,16 +37,27 @@ stop.
 pnpm monorepo.
 
 ```
-packages/core      Pure functions. Contour, simplify, buffer, geometry, solar
-                   position, GSD/altitude math. ZERO I/O. Fully unit tested.
+packages/core      Pure functions. Contour, simplify, buffer, geometry, zones,
+                   solar position, GSD/altitude math. ZERO I/O. Fully unit tested.
 packages/dji       KML serialization for DJI Pilot 2. Isolated because Pilot is
                    fussy and this will need empirical fixing.
 apps/api           Node service. Talks to Copernicus, handles rasters, caches,
-                   persists projects. The only place with I/O and secrets.
+                   persists projects (SQLite via `node:sqlite`). The only place
+                   with I/O and secrets.
 apps/web           Vite + React. MapLibre GL JS. Polygon editing + parameters.
 docs/              design-decisions.md — ADR-lite. The backlog is in GitHub Issues.
 scripts/           One-off and bootstrap scripts.
 ```
+
+The web app has two planning steps over one shared map (D10):
+
+- **Area** (`/area`) — draw and reshape the AOI polygon, cut exclusion zones,
+  open and save projects.
+- **Boundary** (`/boundary`) — date range, threshold, ring selection, buffer,
+  inclusion zones, simplify, export.
+
+Both are routes under one layout that owns the single MapLibre instance, so
+switching steps never tears the map down.
 
 `core` exists so the interesting logic is testable without a server or a browser.
 Both `api` and `web` consume it.
@@ -115,7 +126,14 @@ Seagrass meadows read dark and are classified as *deep*. Bright sand reads shall
 In Kiladha Bay both are present, which is precisely why it is a good test ground and
 precisely why the contour will be wrong in places.
 
-The manual polygon editing feature exists for this reason. It is not a nicety.
+The hand-drawn corrections layer exists for this reason. It is not a nicety.
+
+**Corrections are inputs, never edits to derived geometry** (D10). The Planner draws
+an *inclusion zone* to add survey area back over a meadow SDB called deep, and an
+*exclusion zone* to cut one out. Those polygons are stored with the project and
+re-applied to whatever contour the current threshold produces — so recomputing cannot
+wipe a correction, and a correction cannot silently override better data. The
+consequence, deliberately accepted: you cannot drag a vertex of the computed boundary.
 
 ### Water has no tie points
 
@@ -143,6 +161,18 @@ that the pilot types into Pilot 2 by hand.
   rings with holes. Pilot 2 wants one simple polygon and the RC chokes on high
   vertex counts. Simplification is mandatory, must be non-destructive (keep the
   original contour), and must show a live vertex count.
+- **Holes are not decoration.** An exclusion zone strictly inside the boundary *is*
+  a hole. `boundaryKml` used to write each piece's outer ring only, which made
+  "cut from the exported polygon" silently false — the map showed the harbour
+  excluded and the drone flew it. Inner rings are now emitted as
+  `<innerBoundaryIs>`; whether Pilot 2 honours them is unverified on the RC, same
+  as the multi-Placemark form. A rejected file is loud, a dropped hole is silent.
+- **The AOI is a polygon; `BBox` is the raster envelope.** They are not the same
+  thing and the distinction is load-bearing. The composite is requested and cached
+  on the envelope, so reshaping the AOI inside it costs a re-clip and no refetch.
+  Never send the polygon to the Processing API as `bounds.geometry`: masked pixels
+  come back as no-data, `landMask` reads them as land, and a spurious coastal
+  ribbon grows along the AOI edge.
 
 ## Working agreements
 
@@ -170,10 +200,6 @@ that the pilot types into Pilot 2 by hand.
 
 Flagged rather than guessed. Raise these rather than silently deciding.
 
-- **Manual edits vs recompute** (issue #16). If edits are wiped on recompute the
-  tool is infuriating; if they persist blindly they silently override better data.
-  Current plan: recompute is explicitly destructive with a confirmation. Revisit
-  if it hurts.
 - Refraction convention for `max_depth`.
 - Vertical datum reference.
 - Whether multi-year composite comparison is wanted (potentially interesting for
@@ -189,7 +215,7 @@ At the start of a session, read the backlog from GitHub rather than from memory:
 
 ```bash
 gh issue list --state open --limit 50          # what's outstanding
-gh issue list --milestone "Walking Skeleton"   # the active milestone
+gh issue list --milestone "Shaped by Hand"     # the active milestone
 gh issue view <n>                              # a story, its criteria, its outcome
 ```
 
@@ -200,7 +226,7 @@ Conventions:
 - Epics are labels: `epic:aoi`, `epic:sdb`, `epic:calibration`, `epic:polygon`,
   `epic:flight`, `epic:export`. Status that isn't open/closed is a label too:
   `spike`, `contested`, `parked`.
-- Milestones are for scheduling only. `Walking Skeleton` is the active one;
+- Milestones are for scheduling only. `Shaped by Hand` is the active one;
   everything else carries no milestone.
 - Acceptance criteria are checkboxes in the body. When a story is finished, close
   it **and** append the outcome — what was built, what was measured, what is still

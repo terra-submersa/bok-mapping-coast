@@ -59,7 +59,8 @@ substrate mix. Treating the SDB contour as a *draft* to be corrected, rather tha
 ground truth, is the only honest design.
 
 **Cost.** Raises the unresolved question of what happens to manual edits when the
-composite is recomputed. See story 4.4.
+composite is recomputed. See story 4.4. **Settled by D10:** hand-drawn geometry is an
+input, so the question dissolves rather than being answered.
 
 ---
 
@@ -148,6 +149,54 @@ moved to `CLAUDE.md`, which is read at the start of every session anyway.
 
 ---
 
+## D10 — Hand-drawn geometry is an input, never an edit to derived geometry
+
+**Decided.** The AOI is a polygon, not a bounding box. Alongside it the Planner draws
+*exclusion zones* (cut) and *inclusion zones* (added). All three are inputs, stored with
+the project. The flight boundary stays purely derived from those inputs plus the raster,
+and nothing hand-made ever enters the derived chain.
+
+**Why.** D4 said the frontend is an editor, and left open what happens to a manual edit
+when the composite is recomputed — the question story 4.4 (#16) carried as `contested`
+for the whole of Epic 4. Its three candidate answers were (a) a corrections layer
+replayed as a diff after recompute, (b) recompute is destructive with a confirmation,
+(c) version the polygon so you can branch.
+
+Making corrections *inputs* is (a), obtained by construction rather than by building a
+diff-replay engine. Recompute cannot destroy a hand correction because there is nothing
+hand-made downstream to destroy: change the threshold and the contour moves, but the
+zones you drew are re-applied to the new contour exactly as they were. No diff, no
+replay, no destructive-confirmation dialog, and no silent override of better data —
+the correction is visible as its own object rather than baked into a vertex list.
+
+It also collapses three problems into one editor. Drawing the AOI, cutting the harbour
+out, and pulling the boundary back over a *Posidonia* meadow are the same gesture on
+three lists of polygons.
+
+**Cost.** You cannot drag a vertex of the computed boundary. A correction is made by
+drawing an area that adds or an area that cuts, not by grabbing the green line — less
+direct, and clumsy for a correction that is genuinely one vertex wide.
+
+**Consequences worth knowing.**
+
+- `BBox` survives, demoted to the *raster envelope*. Sentinel Hub and
+  `RatioGrid.gridToLonLat` genuinely need a rectangle; the raster does not become
+  non-rectangular, and the polygon never crosses the wire to the API.
+- Because the composite is fetched and cached on the envelope, reshaping the AOI *inside*
+  its existing envelope is free: a re-clip, not a refetch.
+- An exclusion zone strictly inside the boundary is a hole, and holes were being dropped
+  at export. That made "cut from the polygon" silently false on the RC, which is why
+  #39 emits `<innerBoundaryIs>`.
+- The invariant that keeps D10 compatible with the #32 fix: the coastal ribbon must be
+  bounded by *exactly* the shape the downstream clip uses. Bounding by the composite
+  rectangle while clipping by the AOI polygon reproduces #32 — an annulus around the
+  landmass whose hole is the land.
+
+**Revisit if.** Correcting by drawn areas proves too blunt after flying Kiladha once.
+Then add direct vertex editing as a new story, on top of this, rather than unpicking it.
+
+---
+
 ## Undecided
 
 - **Refraction convention.** Submerged features are displaced by n≈1.34. Does
@@ -155,4 +204,3 @@ moved to `CLAUDE.md`, which is read at the start of every session anyway.
 - **Vertical datum.** Argolic Gulf tides are ~20–30 cm so the error is small, but "4 m"
   still needs a stated reference (MSL vs. instantaneous surface at acquisition).
   Blocks #12.
-- **Manual edits vs recompute.** See #16.
