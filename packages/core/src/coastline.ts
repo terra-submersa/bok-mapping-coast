@@ -1,8 +1,8 @@
-import { buffer as turfBuffer } from "@turf/turf";
+import { buffer as turfBuffer, difference as turfDifference, feature, featureCollection } from "@turf/turf";
 import { contours } from "d3-contour";
 import type { ContourOptions, RatioGrid } from "./contour.js";
 import { gridToLonLat } from "./contour.js";
-import { contourRings } from "./rings.js";
+import { largestPolygon } from "./rings.js";
 
 /**
  * Traces land: pixels with too few contributing scenes to call water at all.
@@ -35,27 +35,44 @@ export function landMask(
 }
 
 /**
- * A single simple polygon covering the coast out to `metres` offshore (the
- * land itself included) — a guaranteed-continuous strip along the whole
- * coastline, so a hole in the depth contour (Posidonia misread as deep,
- * glint, a cloudy patch) doesn't break the flight boundary right next to
- * shore, where structure-from-motion needs it most (issue #27).
+ * A single simple polygon covering the coastline out to `metres` on both
+ * sides of it (offshore and onshore) — a guaranteed-continuous strip along
+ * the whole coastline, so a hole in the depth contour (Posidonia misread as
+ * deep, glint, a cloudy patch) doesn't break the flight boundary right next
+ * to shore, where structure-from-motion needs it most (issue #27).
  *
- * Holes are dropped, same reasoning as `bufferPolygon`: the hole is over
- * land, and flying over land is harmless.
+ * Bounded to a strip, not the whole landmass: `land` is one contiguous
+ * polygon from the shore to wherever the AOI happens to end, so an
+ * unbounded outward buffer of it would carry the boundary across the entire
+ * inland portion of the AOI (issue #30) rather than hugging the coast.
+ * Eroding `land` inward by the same distance and subtracting that from the
+ * outward buffer leaves a band of the requested width straddling the coast;
+ * a landmass thinner than `metres` (an islet, a spit) erodes away entirely,
+ * so it stays included whole, same as before.
+ *
+ * The erosion leaves the excluded interior as a hole, which must be kept:
+ * a landmass much bigger than `metres` (the mainland, not an islet) needs
+ * that hole to stay out of the final boundary (issue #30). Only the
+ * boundary's very last step drops holes, for the small ones the erosion
+ * can't produce — the same reasoning `bufferPolygon` uses.
  */
 export function coastalRibbon(land: GeoJSON.MultiPolygon, metres: number): GeoJSON.Polygon | null {
   if (metres <= 0 || land.coordinates.length === 0) return null;
 
-  const buffered = turfBuffer(land, metres, { units: "meters" });
-  if (!buffered) return null;
+  const outward = turfBuffer(land, metres, { units: "meters" });
+  if (!outward) return null;
 
-  const { geometry } = buffered;
+  const inward = turfBuffer(land, -metres, { units: "meters" });
+  const band = inward
+    ? turfDifference(featureCollection([feature(outward.geometry), feature(inward.geometry)]))
+    : outward;
+  if (!band) return null;
+
+  const { geometry } = band;
   const multi: GeoJSON.MultiPolygon =
     geometry.type === "Polygon"
       ? { type: "MultiPolygon", coordinates: [geometry.coordinates] }
       : geometry;
 
-  const largest = contourRings(multi, 0)[0];
-  return largest ? largest.polygon : null;
+  return largestPolygon(multi, 0);
 }

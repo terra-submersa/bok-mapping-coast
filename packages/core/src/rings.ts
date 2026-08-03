@@ -56,6 +56,34 @@ export function contourRings(
 }
 
 /**
+ * The polygon with the largest exterior-ring area, holes kept intact.
+ *
+ * Companion to `contourRings`, which is deliberately hole-free: a candidate
+ * ring the Planner picks from can safely drop a small island cutout. But a
+ * hole that excludes real land far from the coast — the coastal ribbon's
+ * inward erosion produces exactly this (issue #30) — must survive whatever
+ * merge or AOI clip runs next, or it silently gets refilled.
+ */
+export function largestPolygon(
+  geometry: GeoJSON.MultiPolygon,
+  minAreaM2 = MIN_RING_AREA_M2,
+): GeoJSON.Polygon | null {
+  let best: { polygon: GeoJSON.Polygon; areaM2: number } | null = null;
+
+  for (const polygon of geometry.coordinates) {
+    const ring = polygon[0];
+    if (!ring || ring.length < 4) continue;
+    const areaM2 = area(turfPolygon([ring]));
+    if (areaM2 < minAreaM2) continue;
+    if (!best || areaM2 > best.areaM2) {
+      best = { polygon: { type: "Polygon", coordinates: polygon }, areaM2 };
+    }
+  }
+
+  return best ? best.polygon : null;
+}
+
+/**
  * The ring whose boundary contains `point`, if any.
  *
  * Used to keep the Planner's selection pinned to the same patch of water

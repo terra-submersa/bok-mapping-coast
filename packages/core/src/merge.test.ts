@@ -47,4 +47,33 @@ describe("unionPolygons", () => {
     expect(booleanPointInPolygon([12, 12], merged)).toBe(true);
     expect(booleanPointInPolygon([0.5, 0.5], merged)).toBe(false);
   });
+
+  it("keeps a hole from being silently refilled (issue #30)", () => {
+    const donut: GeoJSON.Polygon = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [0, 0],
+          [0, 10],
+          [10, 10],
+          [10, 0],
+          [0, 0],
+        ],
+        [
+          [3, 3],
+          [3, 7],
+          [7, 7],
+          [7, 3],
+          [3, 3],
+        ],
+      ],
+    };
+    // Disjoint from the donut, and smaller — so it never becomes the "largest
+    // piece" this picks, and can't plug the hole either.
+    const farAway = square(20, 20, 1);
+
+    const merged = unionPolygons(donut, farAway);
+    expect(booleanPointInPolygon([5, 5], merged)).toBe(false);
+    expect(booleanPointInPolygon([1, 1], merged)).toBe(true);
+  });
 });

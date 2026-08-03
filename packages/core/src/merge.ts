@@ -1,12 +1,14 @@
 import { featureCollection, polygon as turfPolygon, union as turfUnion } from "@turf/turf";
-import { contourRings } from "./rings.js";
+import { largestPolygon } from "./rings.js";
 
 /**
  * Merges two flight-boundary candidates into the one simple polygon Pilot 2
  * gets — e.g. the buffered/selected depth-contour ring and the coastal ribbon
  * that guarantees continuous near-shore coverage regardless of contour gaps
- * (issue #27). Holes are dropped and, if the union splits into disjoint
- * pieces, the largest by area wins — same reasoning as `bufferPolygon`.
+ * (issue #27). If the union splits into disjoint pieces, the largest by area
+ * wins — same reasoning as `bufferPolygon`. Its holes are kept, not dropped:
+ * the coastal ribbon relies on a hole to keep excluded inland land excluded
+ * (issue #30) — only the boundary's very last step drops holes.
  */
 export function unionPolygons(a: GeoJSON.Polygon, b: GeoJSON.Polygon): GeoJSON.Polygon {
   if (a.coordinates.length === 0) return b;
@@ -23,6 +25,5 @@ export function unionPolygons(a: GeoJSON.Polygon, b: GeoJSON.Polygon): GeoJSON.P
       ? { type: "MultiPolygon", coordinates: [geometry.coordinates] }
       : geometry;
 
-  const largest = contourRings(multi, 0)[0];
-  return largest ? largest.polygon : a;
+  return largestPolygon(multi, 0) ?? a;
 }

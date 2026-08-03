@@ -43,4 +43,34 @@ describe("clipToBbox", () => {
     const bbox: BBox = [23.0, 37.0, 24.0, 38.0];
     expect(clipToBbox({ type: "Polygon", coordinates: [] }, bbox).coordinates).toEqual([]);
   });
+
+  it("keeps a hole intact when clipping (issue #30)", () => {
+    const bbox: BBox = [23.0, 37.0, 24.0, 38.0];
+    const donut: GeoJSON.Polygon = {
+      type: "Polygon",
+      coordinates: [
+        // Outer ring overflows the bbox on every side, same as a buffered ring.
+        [
+          [22.5, 36.5],
+          [22.5, 38.5],
+          [24.5, 38.5],
+          [24.5, 36.5],
+          [22.5, 36.5],
+        ],
+        // Hole entirely inside the bbox.
+        [
+          [23.4, 37.4],
+          [23.4, 37.6],
+          [23.6, 37.6],
+          [23.6, 37.4],
+          [23.4, 37.4],
+        ],
+      ],
+    };
+
+    const clipped = clipToBbox(donut, bbox);
+
+    expect(booleanPointInPolygon([23.5, 37.5], clipped)).toBe(false);
+    expect(booleanPointInPolygon([23.1, 37.1], clipped)).toBe(true);
+  });
 });

@@ -68,4 +68,23 @@ describe("coastalRibbon", () => {
     const land = landMask(grid(RIGHT_LAND.map(() => 10)));
     expect(coastalRibbon(land, 30)).toBeNull();
   });
+
+  it("does not swallow land far from the coast (issue #30)", () => {
+    // The land half is 2 degrees (~220 km) wide — far wider than the 5 km
+    // ribbon below, so a point deep inland must stay out of the ribbon.
+    // Before the fix, an unbounded outward buffer of the whole land mass
+    // included it regardless of distance from shore.
+    const land = landMask(grid(RIGHT_LAND));
+    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.Polygon;
+    // x=3 sits in the middle of the 2-degree-wide land mass — ~110 km from
+    // both the shoreline at x=2 and the grid's far edge at x=4, well beyond
+    // the 5 km ribbon on either side.
+    expect(booleanPointInPolygon([3, 2], ribbon)).toBe(false);
+  });
+
+  it("still covers land right at the coast", () => {
+    const land = landMask(grid(RIGHT_LAND));
+    const ribbon = coastalRibbon(land, 5_000) as GeoJSON.Polygon;
+    expect(booleanPointInPolygon([2.01, 2], ribbon)).toBe(true);
+  });
 });
