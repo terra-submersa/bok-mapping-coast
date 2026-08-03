@@ -1,12 +1,13 @@
 import {
   bufferPolygon,
   type ContourRing,
-  clipToBbox,
+  clipToAoi,
   coastalRibbon,
   contourRings,
   countVertices,
   findRingContaining,
   landMask,
+  rectangleAoi,
   shallowWaterContour,
   simplifyContour,
   toMultiPolygon,
@@ -57,7 +58,7 @@ export interface BoundaryState {
  */
 export function useBoundary(): BoundaryState {
   const {
-    bbox,
+    aoi,
     composite,
     threshold,
     tolerance,
@@ -135,14 +136,34 @@ export function useBoundary(): BoundaryState {
   const land = useMemo(() => (composite ? landMask(composite) : null), [composite]);
 
   /**
+   * The AOI, cut down to the raster that actually exists for it — and **the one shape
+   * that bounds both the ribbon and the clip below.**
+   *
+   * Two separate constraints meet here. `land` is traced from the composite's grid, so
+   * the composite's rectangle is where its artificial cuts lie and the ribbon must not
+   * be bounded by anything larger (issue #32). And the AOI is what the Planner actually
+   * intends to fly, so nothing may end up outside it (D10). Intersecting once and using
+   * the result for both steps satisfies both — and, crucially, keeps the ribbon bounded
+   * by exactly the shape that later clips it, which is the entire mechanism of the #32
+   * fix. Bound by one shape and clip by another and the clip closes the band along its
+   * own edge, wrapping each landmass in an annulus whose hole is the land.
+   *
+   * The intersection also covers the window where the AOI has moved but the composite
+   * for it has not arrived yet: until it does, the effective AOI is the overlap, which
+   * is what `MapView` used to get by passing `composite.bbox`.
+   */
+  const effectiveAoi = useMemo(
+    () => (aoi && composite ? clipToAoi(aoi, rectangleAoi(composite.bbox)) : null),
+    [aoi, composite],
+  );
+
+  /**
    * A continuous strip along the whole coastline out to `coastMetres`, guaranteeing
    * near-shore coverage even where the depth contour has a gap.
    */
   const ribbon = useMemo(
-    // The composite's own bbox, not the AOI state: `land` is traced from that grid, so
-    // that is the rectangle its artificial cuts lie on (issue #32).
-    () => (land && composite ? coastalRibbon(land, coastMetres, composite.bbox) : null),
-    [land, composite, coastMetres],
+    () => (land && effectiveAoi ? coastalRibbon(land, coastMetres, effectiveAoi) : null),
+    [land, effectiveAoi, coastMetres],
   );
 
   /**
@@ -158,13 +179,14 @@ export function useBoundary(): BoundaryState {
    * The buffer step grows geometry outward in unbounded space, so wherever the raw
    * contour touches the AOI's edge, the grown result juts past it (issue #29).
    * Clipping back to the AOI here — after the union, equivalent to clipping each side
-   * beforehand — restores that edge as the boundary's hard limit. (The ribbon arrives
-   * already bounded, since issue #32.)
+   * beforehand — restores that edge as the boundary's hard limit. The ribbon arrives
+   * already bounded by this same `effectiveAoi`, so this is a no-op on it, which is
+   * what issue #32 needs it to be.
    */
   const clippedPolygon = useMemo(() => {
-    if (!mergedPolygon || !bbox) return mergedPolygon;
-    return clipToBbox(mergedPolygon, bbox);
-  }, [mergedPolygon, bbox]);
+    if (!mergedPolygon || !effectiveAoi) return mergedPolygon;
+    return clipToAoi(mergedPolygon, effectiveAoi);
+  }, [mergedPolygon, effectiveAoi]);
 
   const boundary = useMemo(
     () => (clippedPolygon ? simplifyContour(clippedPolygon, tolerance) : null),

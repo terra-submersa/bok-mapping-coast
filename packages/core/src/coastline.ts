@@ -1,6 +1,5 @@
 import {
   area,
-  bboxPolygon,
   feature,
   featureCollection,
   buffer as turfBuffer,
@@ -9,12 +8,9 @@ import {
   polygon as turfPolygon,
 } from "@turf/turf";
 import { contours } from "d3-contour";
-import type { BBox } from "./bbox.js";
 import type { ContourOptions, RatioGrid } from "./contour.js";
 import { gridToLonLat } from "./contour.js";
-
-/** What turf's boolean ops take and return: either polygonal geometry. */
-type Polygonal = GeoJSON.Polygon | GeoJSON.MultiPolygon;
+import type { Polygonal } from "./polygonal.js";
 
 /**
  * Below this, a "landmass" is a no-data speck, not geography: one permanently
@@ -97,18 +93,26 @@ export function landMask(
  *
  * Returns every disjoint piece of the band, not just the largest — one
  * landmass's ribbon must not swallow every other landmass's (issue #31).
+ *
+ * **`aoi` must be the exact shape the downstream clip uses** — not its
+ * envelope, not the composite's rectangle. That is the whole mechanism of the
+ * #32 fix: the ribbon is bounded at source by the same shape that clips it
+ * later, so the clip is a no-op on the ribbon and never introduces a cut of
+ * its own. Bound by a rectangle and clip by a polygon and #32 comes straight
+ * back, with a diagonal annulus instead of a rectangular one. Since the AOI
+ * became a polygon (D10) this is a live hazard rather than a historical note.
  */
 export function coastalRibbon(
   land: GeoJSON.MultiPolygon,
   metres: number,
-  aoi: BBox,
+  aoi: Polygonal,
 ): GeoJSON.MultiPolygon | null {
   if (metres <= 0 || land.coordinates.length === 0) return null;
 
   const outward = turfBuffer(land, metres, { units: "meters" });
   if (!outward) return null;
 
-  const water = turfDifference(featureCollection<Polygonal>([bboxPolygon(aoi), feature(land)]));
+  const water = turfDifference(featureCollection<Polygonal>([feature(aoi), feature(land)]));
   if (!water) return null;
 
   const band = turfIntersect(featureCollection<Polygonal>([feature(outward.geometry), water]));

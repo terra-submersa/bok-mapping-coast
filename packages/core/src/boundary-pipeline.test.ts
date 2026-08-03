@@ -1,8 +1,9 @@
 import { booleanPointInPolygon } from "@turf/turf";
 import { describe, expect, it } from "vitest";
+import { type Aoi, rectangleAoi } from "./aoi.js";
 import type { BBox } from "./bbox.js";
 import { bufferPolygon } from "./buffer.js";
-import { clipToBbox } from "./clip.js";
+import { clipToAoi } from "./clip.js";
 import { coastalRibbon, landMask } from "./coastline.js";
 import { type RatioGrid, shallowWaterContour } from "./contour.js";
 import { unionPolygons } from "./merge.js";
@@ -57,11 +58,45 @@ function asExported(boundary: GeoJSON.MultiPolygon): GeoJSON.MultiPolygon {
   };
 }
 
+/**
+ * The lower-left half of the AOI, cut corner to corner. The mainland and the
+ * shallow band off it stay inside; the island at (5–6, 2–3) falls outside.
+ * Its envelope is the whole of `AOI`, so anything this excludes is something
+ * only a polygon AOI can exclude (D10).
+ */
+const DIAGONAL_AOI: Aoi = {
+  type: "Polygon",
+  coordinates: [
+    [
+      [0, 0],
+      [8, 0],
+      [0, 8],
+      [0, 0],
+    ],
+  ],
+};
+
+/**
+ * The AOI defaults to the rectangle the grid covers, so every assertion below
+ * that predates D10 runs against exactly the geometry it was written for — the
+ * rectangle is now a case, not a separate code path.
+ *
+ * Note that `aoi` is passed to `coastalRibbon` *and* to `clipToAoi`. That is
+ * not tidiness: bounding the ribbon by one shape and clipping by another is
+ * precisely the #32 bug, and it is only reachable now that the two can differ.
+ */
 function buildBoundary({
   threshold = 0.5,
   bufferMetres = 20_000,
   coastMetres = 50_000,
   tolerance = 0,
+  aoi = rectangleAoi(AOI),
+}: {
+  threshold?: number;
+  bufferMetres?: number;
+  coastMetres?: number;
+  tolerance?: number;
+  aoi?: Aoi;
 } = {}): GeoJSON.MultiPolygon {
   const grid = kiladhaGrid();
 
@@ -73,10 +108,10 @@ function buildBoundary({
     : { type: "MultiPolygon" as const, coordinates: [] };
 
   const buffered = bufferPolygon(combined, bufferMetres);
-  const ribbon = coastalRibbon(landMask(grid), coastMetres, grid.bbox);
+  const ribbon = coastalRibbon(landMask(grid), coastMetres, aoi);
   const merged = ribbon ? unionPolygons(buffered, ribbon) : buffered;
 
-  return simplifyContour(clipToBbox(merged, grid.bbox), tolerance);
+  return simplifyContour(clipToAoi(merged, aoi), tolerance);
 }
 
 describe("the boundary pipeline", () => {
@@ -128,5 +163,38 @@ describe("the boundary pipeline", () => {
     expect(booleanPointInPolygon([4.2, 0.6], boundary)).toBe(true);
     expect(booleanPointInPolygon([4.9, 5], boundary)).toBe(true);
     expect(booleanPointInPolygon([1, 1], asExported(boundary))).toBe(false);
+  });
+
+  describe("with a non-rectangular AOI (D10)", () => {
+    it("stops at the AOI's own edge, not at its envelope", () => {
+      const boundary = buildBoundary({ aoi: DIAGONAL_AOI });
+
+      // Below the diagonal, off the mainland — still surveyed.
+      expect(booleanPointInPolygon([4.2, 0.6], boundary)).toBe(true);
+      // Above the diagonal. Inside the envelope, so the old rectangle clip kept
+      // it; the polygon AOI is the only thing that can cut it.
+      expect(booleanPointInPolygon([6, 6], boundary)).toBe(false);
+      for (const [lon, lat] of boundary.coordinates.flat(2)) {
+        expect(lon + lat).toBeLessThanOrEqual(8 + 1e-9);
+      }
+    });
+
+    it("does not wrap the mainland once the AOI edge is a diagonal (issue #32)", () => {
+      // #32's failure mode, moved onto a slanted edge: the ribbon escapes the
+      // shape it was bounded by, the clip snaps it shut along the AOI edge, and
+      // the landmass ends up inside an annulus whose hole dies at export.
+      const exported = asExported(buildBoundary({ aoi: DIAGONAL_AOI }));
+
+      expect(booleanPointInPolygon([1, 1], exported)).toBe(false);
+      expect(booleanPointInPolygon([0.5, 1.5], exported)).toBe(false);
+    });
+
+    it("drops a landmass that falls outside the AOI entirely", () => {
+      // The island sits above the diagonal, so it is not in the survey at all —
+      // and must not drag a ribbon in with it.
+      const boundary = buildBoundary({ aoi: DIAGONAL_AOI });
+      expect(booleanPointInPolygon([4.9, 5], boundary)).toBe(false);
+      expect(booleanPointInPolygon([7.1, 5], boundary)).toBe(false);
+    });
   });
 });

@@ -27,6 +27,17 @@ export function nativeOutputSize(bbox: BBox): OutputSize {
   return { width: clamp(widthPx), height: clamp(heightPx) };
 }
 
+/**
+ * The request always carries a **rectangle**, even though the AOI is a polygon since
+ * D10 — the polygon never crosses the wire, and `request.bbox` is its envelope.
+ *
+ * Sentinel Hub does accept `bounds.geometry` for an arbitrary shape, and using it here
+ * would be a mistake. Pixels outside the geometry come back as no-data, `landMask`
+ * reads no-data as *land* (that is the whole basis of the coastline proxy in issue
+ * #27), and every AOI would therefore grow a spurious coastal ribbon along its own
+ * edge — a direct #27/#34 regression, on top of quietly changing what the cache key
+ * means. The polygon is applied geometrically instead, downstream, by `clipToAoi`.
+ */
 export function buildProcessBody(request: CompositeRequest, size: OutputSize) {
   return {
     input: {

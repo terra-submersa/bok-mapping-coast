@@ -1,5 +1,6 @@
 import { area, booleanPointInPolygon } from "@turf/turf";
 import { describe, expect, it } from "vitest";
+import { type Aoi, rectangleAoi } from "./aoi.js";
 import type { BBox } from "./bbox.js";
 import { coastalRibbon, landMask } from "./coastline.js";
 import type { RatioGrid } from "./contour.js";
@@ -21,7 +22,7 @@ function grid(sceneCount: number[]): RatioGrid {
 /** Right half land (no contributing scenes), left half water. */
 const RIGHT_LAND = [10, 10, 0, 0, 10, 10, 0, 0, 10, 10, 0, 0, 10, 10, 0, 0];
 
-const AOI: BBox = [0, 0, 4, 4];
+const AOI: Aoi = rectangleAoi([0, 0, 4, 4]);
 
 /**
  * Kiladha in miniature: a staircase coastline filling the lower-left corner —
@@ -33,7 +34,8 @@ const AOI: BBox = [0, 0, 4, 4];
  * 8x8 over an 8-degree box, so grid x maps straight onto longitude and
  * latitude counts back down from the top row.
  */
-const KILADHA_AOI: BBox = [0, 0, 8, 8];
+const KILADHA_BBOX: BBox = [0, 0, 8, 8];
+const KILADHA_AOI: Aoi = rectangleAoi(KILADHA_BBOX);
 
 function kiladhaGrid(): RatioGrid {
   const sceneCount: number[] = [];
@@ -44,7 +46,7 @@ function kiladhaGrid(): RatioGrid {
       sceneCount.push(mainland || island ? 0 : 10);
     }
   }
-  return { width: 8, height: 8, ratio: sceneCount.map(() => 1), sceneCount, bbox: KILADHA_AOI };
+  return { width: 8, height: 8, ratio: sceneCount.map(() => 1), sceneCount, bbox: KILADHA_BBOX };
 }
 
 /** Every position across every ring of every piece. */
@@ -57,7 +59,8 @@ function positions(geometry: GeoJSON.MultiPolygon): GeoJSON.Position[] {
  * 11.1 m — Sentinel-2's 10 m bands. Needed for the area-threshold tests,
  * where the degree-sized fixtures above are meaninglessly large.
  */
-const REALISTIC_AOI: BBox = [23.1, 37.4, 23.11, 37.41];
+const REALISTIC_BBOX: BBox = [23.1, 37.4, 23.11, 37.41];
+const REALISTIC_AOI: Aoi = rectangleAoi(REALISTIC_BBOX);
 
 function realisticGrid(isLand: (x: number, y: number) => boolean): RatioGrid {
   const sceneCount: number[] = [];
@@ -69,7 +72,7 @@ function realisticGrid(isLand: (x: number, y: number) => boolean): RatioGrid {
     height: 100,
     ratio: sceneCount.map(() => 1),
     sceneCount,
-    bbox: REALISTIC_AOI,
+    bbox: REALISTIC_BBOX,
   };
 }
 
@@ -181,7 +184,7 @@ describe("coastalRibbon", () => {
       bbox: [0, 0, 8, 4],
     };
     const land = landMask(wideGrid);
-    const ribbon = coastalRibbon(land, 5_000, [0, 0, 8, 4]) as GeoJSON.MultiPolygon;
+    const ribbon = coastalRibbon(land, 5_000, rectangleAoi([0, 0, 8, 4])) as GeoJSON.MultiPolygon;
     // Water just off the islet (coastline at x=1) ...
     expect(booleanPointInPolygon([1.01, 2], ribbon)).toBe(true);
     // ... and water just off the mainland (coastline at x=5) — both covered.
@@ -192,7 +195,7 @@ describe("coastalRibbon", () => {
 
   it("never extends outside the AOI (issue #32)", () => {
     const ribbon = coastalRibbon(landMask(kiladhaGrid()), 50_000, KILADHA_AOI);
-    const [minLon, minLat, maxLon, maxLat] = KILADHA_AOI;
+    const [minLon, minLat, maxLon, maxLat] = KILADHA_BBOX;
     for (const [lon, lat] of positions(ribbon as GeoJSON.MultiPolygon)) {
       expect(lon).toBeGreaterThanOrEqual(minLon);
       expect(lon).toBeLessThanOrEqual(maxLon);

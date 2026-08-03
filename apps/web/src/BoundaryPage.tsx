@@ -17,7 +17,7 @@ import { ThresholdPanel } from "./ThresholdPanel.js";
  */
 export function BoundaryPage() {
   const {
-    bbox,
+    aoi,
     from,
     to,
     setFrom,
@@ -60,7 +60,7 @@ export function BoundaryPage() {
   return (
     <AccordionContext.Provider value={{ activeId: activeSection, setActiveId: setActiveSection }}>
       <DepthPanel
-        hasAoi={bbox !== null}
+        hasAoi={aoi !== null}
         from={from}
         to={to}
         onFromChange={setFrom}

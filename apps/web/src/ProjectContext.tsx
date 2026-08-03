@@ -1,4 +1,4 @@
-import { type BBox, MIN_RING_AREA_M2, sameBbox } from "@bok/core";
+import { type Aoi, aoiEnvelope, MIN_RING_AREA_M2, sameBbox } from "@bok/core";
 import {
   createContext,
   type ReactNode,
@@ -26,10 +26,10 @@ const DEFAULT_COAST_METRES = 30;
 
 export interface ProjectContextValue {
   /** The AOI, and the drawing mode that produces one. */
-  bbox: BBox | null;
+  aoi: Aoi | null;
   isDrawing: boolean;
   setIsDrawing: (drawing: boolean) => void;
-  applyBbox: (next: BBox) => void;
+  applyAoi: (next: Aoi) => void;
   clearAoi: () => void;
 
   /** Composite window and the raster fetched for it. */
@@ -87,12 +87,12 @@ export function useProject(): ProjectContextValue {
  * state in `MapLayout`, which is what lets the state outlive any one route.
  */
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [bbox, setBboxState] = useState<BBox | null>(() => loadStoredAoi());
+  const [aoi, setAoiState] = useState<Aoi | null>(() => loadStoredAoi());
   /**
-   * Mirrors `bbox`. The terra-draw "finish" handler is registered once at mount, so
-   * its closure would otherwise read a `bbox` that is forever whatever it was then.
+   * Mirrors `aoi`. The terra-draw "finish" handler is registered once at mount, so
+   * its closure would otherwise read an `aoi` that is forever whatever it was then.
    */
-  const bboxRef = useRef<BBox | null>(bbox);
+  const aoiRef = useRef<Aoi | null>(aoi);
   const [isDrawing, setIsDrawing] = useState(false);
 
   const [from, setFrom] = useState(DEFAULT_FROM);
@@ -141,36 +141,40 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setAllRingsSelected(false);
   }, []);
 
-  const applyBbox = useCallback(
-    (next: BBox) => {
-      // Everything downstream is computed for one specific bbox: the composite is
-      // fetched for it, the contour comes from that composite, and the KML comes from
-      // that contour. Moving the AOI invalidates the lot, so drop it rather than leave
-      // a raster and a contour pinned to the previous box — a Planner would otherwise
-      // happily export a flight boundary for the wrong stretch of coast, with nothing
-      // on screen saying so. Re-applying an identical bbox costs nothing.
-      if (!sameBbox(bboxRef.current, next)) clearComposite();
-      bboxRef.current = next;
-      setBboxState(next);
+  const applyAoi = useCallback(
+    (next: Aoi) => {
+      // The composite is fetched, cached and billed on the AOI's *envelope*, and the
+      // raster's pixel grid is pinned to that box — so it is the envelope, not the
+      // shape, that decides whether everything downstream is stale. Reshaping inside
+      // the box the raster already covers costs a re-clip and nothing else (D10).
+      //
+      // When the envelope does move, drop the lot rather than leave a raster and a
+      // contour pinned to the previous box: a Planner would otherwise happily export
+      // a flight boundary for the wrong stretch of coast, with nothing on screen
+      // saying so.
+      const before = aoiRef.current;
+      if (!before || !sameBbox(aoiEnvelope(before), aoiEnvelope(next))) clearComposite();
+      aoiRef.current = next;
+      setAoiState(next);
       storeAoi(next);
     },
     [clearComposite],
   );
 
   const clearAoi = useCallback(() => {
-    bboxRef.current = null;
-    setBboxState(null);
+    aoiRef.current = null;
+    setAoiState(null);
     clearStoredAoi();
     clearComposite();
   }, [clearComposite]);
 
   const loadComposite = useCallback(async () => {
-    const current = bboxRef.current;
+    const current = aoiRef.current;
     if (!current) return;
     setLoadingComposite(true);
     setCompositeError(null);
     try {
-      const next = await fetchComposite({ bbox: current, from, to });
+      const next = await fetchComposite({ bbox: aoiEnvelope(current), from, to });
       const range = waterRange(next);
       if (!range) {
         setCompositeError("The composite has no water pixels — check the AOI and the date range.");
@@ -190,10 +194,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   return (
     <ProjectContext.Provider
       value={{
-        bbox,
+        aoi,
         isDrawing,
         setIsDrawing,
-        applyBbox,
+        applyAoi,
         clearAoi,
         from,
         to,

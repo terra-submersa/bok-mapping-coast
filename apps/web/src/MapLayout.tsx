@@ -1,4 +1,4 @@
-import { type BBox, type ContourRing, findRingContaining } from "@bok/core";
+import { type Aoi, type ContourRing, findRingContaining } from "@bok/core";
 import {
   type GeoJSONSource,
   type ImageSource,
@@ -8,7 +8,7 @@ import {
 } from "maplibre-gl";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Outlet } from "react-router";
-import { TerraDraw, TerraDrawRectangleMode } from "terra-draw";
+import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
 import type { Composite } from "./composite.js";
@@ -83,37 +83,12 @@ function boundaryFeature(
   };
 }
 
-function bboxToFeatureCollection(bbox: BBox): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
-  const [minLon, minLat, maxLon, maxLat] = bbox;
+function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
+  if (!aoi) return emptyFeatureCollection();
   return {
     type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "Polygon",
-          coordinates: [
-            [
-              [minLon, minLat],
-              [maxLon, minLat],
-              [maxLon, maxLat],
-              [minLon, maxLat],
-              [minLon, minLat],
-            ],
-          ],
-        },
-      },
-    ],
+    features: [{ type: "Feature", properties: {}, geometry: aoi }],
   };
-}
-
-/** The rectangle mode draws an axis-aligned lon/lat box, so its ring's min/max corners are the bbox. */
-function polygonToBbox(coordinates: number[][][]): BBox {
-  const ring = coordinates[0] ?? [];
-  const lons = ring.map((c) => c[0]);
-  const lats = ring.map((c) => c[1]);
-  return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
 }
 
 /** The drawing controls a sidebar panel needs. The map instance itself stays private. */
@@ -154,8 +129,8 @@ function MapSurface() {
   const [overlaysReady, setOverlaysReady] = useState(false);
 
   const {
-    bbox,
-    applyBbox,
+    aoi,
+    applyAoi,
     isDrawing,
     setIsDrawing,
     composite,
@@ -238,7 +213,9 @@ function MapSurface() {
 
     const draw = new TerraDraw({
       adapter: new TerraDrawMapLibreGLAdapter({ map }),
-      modes: [new TerraDrawRectangleMode()],
+      // A polygon, not a rectangle: Kiladha Bay is not box-shaped, and reducing
+      // whatever was drawn to its min/max corners is what D10 undoes.
+      modes: [new TerraDrawPolygonMode()],
     });
     drawRef.current = draw;
 
@@ -248,7 +225,7 @@ function MapSurface() {
       draw.stop();
       setIsDrawing(false);
       if (feature?.geometry.type === "Polygon") {
-        applyBbox(polygonToBbox(feature.geometry.coordinates));
+        applyAoi(feature.geometry);
       }
     });
 
@@ -341,8 +318,8 @@ function MapSurface() {
   useEffect(() => {
     if (!overlaysReady) return;
     const source = mapRef.current?.getSource(AOI_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(bbox ? bboxToFeatureCollection(bbox) : emptyFeatureCollection());
-  }, [overlaysReady, bbox]);
+    source?.setData(aoiFeatureCollection(aoi));
+  }, [overlaysReady, aoi]);
 
   useEffect(() => {
     if (!overlaysReady) return;
@@ -382,7 +359,7 @@ function MapSurface() {
       const draw = drawRef.current;
       if (!draw) return;
       draw.start();
-      draw.setMode("rectangle");
+      draw.setMode("polygon");
       setIsDrawing(true);
     },
     stopDraw: () => {
