@@ -7,11 +7,16 @@ import { NavLink } from "react-router";
  */
 export const APP_NAME = "Shoalmark";
 
-/** Plan is the index route, so it needs `end` or it reads as active everywhere. */
+/**
+ * Planning is two steps over one map — where, then how deep (issue #38). Every route
+ * is an explicit path now, so none of them needs `end` to avoid reading as active
+ * everywhere; "/" redirects to "/area".
+ */
 const SECTIONS = [
-  { to: "/", label: "Plan", end: true },
-  { to: "/calibrate", label: "Calibrate", end: false },
-  { to: "/fly", label: "Fly", end: false },
+  { to: "/area", label: "Area" },
+  { to: "/boundary", label: "Boundary" },
+  { to: "/calibrate", label: "Calibrate" },
+  { to: "/fly", label: "Fly" },
 ];
 
 /**
@@ -23,8 +28,8 @@ export function AppHeader() {
     <header className="app-header">
       <span className="wordmark">{APP_NAME}</span>
       <nav aria-label="Main">
-        {SECTIONS.map(({ to, label, end }) => (
-          <NavLink key={to} to={to} end={end} className="nav-link">
+        {SECTIONS.map(({ to, label }) => (
+          <NavLink key={to} to={to} className="nav-link">
             {label}
           </NavLink>
         ))}
