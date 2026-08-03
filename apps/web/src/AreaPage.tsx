@@ -19,7 +19,7 @@ import { useProject } from "./ProjectContext.js";
  */
 export function AreaPage() {
   const { aoi, isDrawing, applyAoi, clearAoi } = useProject();
-  const { startDraw, stopDraw } = useMapControls();
+  const { startDraw, stopDraw, isEditing, startEdit, stopEdit, editError } = useMapControls();
   const [activeSection, setActiveSection] = useState("aoi");
   const [note, setNote] = useState<string | null>(null);
 
@@ -39,6 +39,7 @@ export function AreaPage() {
 
   function handleClear() {
     stopDraw();
+    stopEdit();
     setNote(null);
     clearAoi();
   }
@@ -47,6 +48,9 @@ export function AreaPage() {
     try {
       const parsed = parseAoiInput(text);
       stopDraw();
+      // A pasted shape replaces whatever was being reshaped, so terra-draw's copy of
+      // the old one has to go with it.
+      stopEdit();
       applyAoi(parsed.polygon);
       setNote(parsed.note ?? null);
       return null;
@@ -64,8 +68,11 @@ export function AreaPage() {
         envelopeKm2={envelopeKm2}
         limitCheck={limitCheck}
         isDrawing={isDrawing}
+        isEditing={isEditing}
         note={note}
+        editError={editError}
         onStartDraw={startDraw}
+        onToggleEdit={isEditing ? stopEdit : startEdit}
         onClear={handleClear}
         onPasteApply={handlePasteApply}
       />

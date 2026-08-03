@@ -1,4 +1,10 @@
-import { type Aoi, type ContourRing, findRingContaining } from "@bok/core";
+import {
+  type Aoi,
+  type ContourRing,
+  findRingContaining,
+  nearestVertexIndex,
+  removeVertex,
+} from "@bok/core";
 import {
   type GeoJSONSource,
   type ImageSource,
@@ -8,7 +14,7 @@ import {
 } from "maplibre-gl";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Outlet } from "react-router";
-import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
+import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
 import type { Composite } from "./composite.js";
@@ -26,6 +32,13 @@ const DEPTH_SOURCE_ID = "depth";
 const DEPTH_LAYER_ID = "depth-raster";
 const RINGS_SOURCE_ID = "rings";
 const BOUNDARY_SOURCE_ID = "boundary";
+
+/**
+ * How close a shift-click has to land to count as "on" a vertex. A screen distance,
+ * not a geographic one — a corner is grabbable at the same effort whether you are
+ * zoomed to the whole gulf or to one jetty.
+ */
+const VERTEX_GRAB_PX = 12;
 
 /**
  * Satellite imagery, not a street basemap: story 2.3 exists so the Planner can judge
@@ -95,6 +108,12 @@ function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSO
 export interface MapContextValue {
   startDraw: () => void;
   stopDraw: () => void;
+  /** Reshaping mode: drag a corner, click a midpoint to insert, shift-click to delete. */
+  isEditing: boolean;
+  startEdit: () => void;
+  stopEdit: () => void;
+  /** Why the last gesture was refused, e.g. deleting the third-from-last corner. */
+  editError: string | null;
 }
 
 const MapContext = createContext<MapContextValue | null>(null);
@@ -127,6 +146,8 @@ function MapSurface() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const [overlaysReady, setOverlaysReady] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const {
     aoi,
@@ -145,12 +166,22 @@ function MapSurface() {
   /** Read by handlers registered once at mount, which cannot see current state. */
   const isDrawingRef = useRef(isDrawing);
   const ringsRef = useRef<ContourRing[]>(rings);
+  const aoiRef = useRef<Aoi | null>(aoi);
+  const isEditingRef = useRef(isEditing);
+  /** terra-draw's id for the AOI while it is being reshaped. */
+  const editedFeatureRef = useRef<string | number | undefined>(undefined);
   useEffect(() => {
     isDrawingRef.current = isDrawing;
   }, [isDrawing]);
   useEffect(() => {
     ringsRef.current = rings;
   }, [rings]);
+  useEffect(() => {
+    aoiRef.current = aoi;
+  }, [aoi]);
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
 
   /** Paints the active layer (depth or scene count) into an image source pinned to its own bbox corners. */
   function paintLayer(next: Composite, mode: LayerView) {
@@ -213,20 +244,50 @@ function MapSurface() {
 
     const draw = new TerraDraw({
       adapter: new TerraDrawMapLibreGLAdapter({ map }),
-      // A polygon, not a rectangle: Kiladha Bay is not box-shaped, and reducing
-      // whatever was drawn to its min/max corners is what D10 undoes.
-      modes: [new TerraDrawPolygonMode()],
+      modes: [
+        // A polygon, not a rectangle: Kiladha Bay is not box-shaped, and reducing
+        // whatever was drawn to its min/max corners is what D10 undoes.
+        new TerraDrawPolygonMode(),
+        // Reshaping, once it exists (issue #37). `midpoints` is what puts a handle
+        // between every pair of corners, so inserting one is a click; `deletable`
+        // is terra-draw's own right-click delete. The shift-click the story asks
+        // for is not reachable from here — select mode hardwires coordinate
+        // deletion to onRightClick and never consults the event's held keys — so
+        // it is a map-level handler further down.
+        new TerraDrawSelectMode({
+          flags: {
+            polygon: {
+              feature: {
+                draggable: true,
+                coordinates: { draggable: true, midpoints: true, deletable: true },
+              },
+            },
+          },
+        }),
+      ],
     });
     drawRef.current = draw;
 
-    draw.on("finish", (id) => {
+    draw.on("finish", (id, context) => {
       const feature = draw.getSnapshot().find((f) => f.id === id);
-      draw.clear();
-      draw.stop();
-      setIsDrawing(false);
-      if (feature?.geometry.type === "Polygon") {
+      if (feature?.geometry.type !== "Polygon") return;
+
+      if (context.action === "draw") {
+        // A freshly drawn shape. Keep it in the store rather than clearing it, so
+        // the Planner can go straight on to reshaping it.
+        editedFeatureRef.current = id;
+        setIsDrawing(false);
+        setIsEditing(true);
+        draw.setMode("select");
         applyAoi(feature.geometry);
+        return;
       }
+
+      // Every other action is an edit of the shape already there: a dragged corner,
+      // an inserted midpoint, terra-draw's own right-click delete, or the whole
+      // feature moved. `finish` fires once per gesture, not once per frame, which is
+      // what keeps the pipeline from recomputing on every mouse move.
+      applyAoi(feature.geometry);
     });
 
     // Driven by styledata rather than a one-shot "load" listener, and made idempotent by
@@ -306,6 +367,39 @@ function MapSurface() {
         }
       });
 
+      /**
+       * Shift-click a corner to delete it (issue #37).
+       *
+       * terra-draw cannot do this itself: select mode hardwires coordinate deletion
+       * to `onRightClick`, and although `TerraDrawMouseEvent` carries `heldKeys`, the
+       * mode never looks at them. Its right-click delete is enabled too, so both
+       * gestures work; this is the one the story asked for.
+       */
+      map.on("click", (e) => {
+        if (!e.originalEvent.shiftKey || !isEditingRef.current) return;
+        const current = aoiRef.current;
+        const featureId = editedFeatureRef.current;
+        if (!current || featureId === undefined) return;
+
+        // The grab radius is in pixels, so convert it here where the zoom is known.
+        const origin = map.project(e.lngLat);
+        const grabMetres = map
+          .unproject(origin)
+          .distanceTo(map.unproject([origin.x + VERTEX_GRAB_PX, origin.y]));
+
+        const index = nearestVertexIndex(current, [e.lngLat.lng, e.lngLat.lat], grabMetres);
+        if (index === null) return;
+
+        const next = removeVertex(current, index);
+        if (!next) {
+          setEditError("An area needs at least three corners.");
+          return;
+        }
+        setEditError(null);
+        draw.updateFeatureGeometry(featureId, next);
+        applyAoi(next);
+      });
+
       setOverlaysReady(true);
     };
 
@@ -318,8 +412,10 @@ function MapSurface() {
   useEffect(() => {
     if (!overlaysReady) return;
     const source = mapRef.current?.getSource(AOI_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(aoiFeatureCollection(aoi));
-  }, [overlaysReady, aoi]);
+    // Emptied while reshaping: terra-draw renders the AOI itself in select mode, and
+    // two copies of the same outline make the vertex handles unreadable.
+    source?.setData(isEditing ? emptyFeatureCollection() : aoiFeatureCollection(aoi));
+  }, [overlaysReady, aoi, isEditing]);
 
   useEffect(() => {
     if (!overlaysReady) return;
@@ -354,10 +450,23 @@ function MapSurface() {
     }
   }, [opacity]);
 
+  /** Hands the AOI back, drops terra-draw's copy, and returns to the plain outline. */
+  function leaveEditing() {
+    const draw = drawRef.current;
+    if (draw) {
+      draw.clear();
+      draw.stop();
+    }
+    editedFeatureRef.current = undefined;
+    setIsEditing(false);
+    setEditError(null);
+  }
+
   const controls: MapContextValue = {
     startDraw: () => {
       const draw = drawRef.current;
       if (!draw) return;
+      leaveEditing();
       draw.start();
       draw.setMode("polygon");
       setIsDrawing(true);
@@ -369,6 +478,26 @@ function MapSurface() {
       draw.stop();
       setIsDrawing(false);
     },
+    isEditing,
+    startEdit: () => {
+      const draw = drawRef.current;
+      if (!draw || !aoi) return;
+      draw.start();
+      draw.setMode("select");
+      draw.clear();
+      // terra-draw owns the geometry while it is being reshaped; `mode` has to name
+      // the mode whose flags govern the handles, which is why it is "polygon" and not
+      // "select" here.
+      draw.addFeatures([{ type: "Feature", properties: { mode: "polygon" }, geometry: aoi }]);
+      const [added] = draw.getSnapshot();
+      if (added?.id === undefined) return;
+      editedFeatureRef.current = added.id;
+      draw.selectFeature(added.id);
+      setEditError(null);
+      setIsEditing(true);
+    },
+    stopEdit: leaveEditing,
+    editError,
   };
 
   return (

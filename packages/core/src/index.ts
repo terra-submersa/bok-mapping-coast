@@ -1,4 +1,13 @@
-export { type Aoi, aoiEnvelope, polygonAreaKm2, rectangleAoi, sameAoi } from "./aoi.js";
+export {
+  type Aoi,
+  aoiEnvelope,
+  MIN_AOI_CORNERS,
+  nearestVertexIndex,
+  polygonAreaKm2,
+  rectangleAoi,
+  removeVertex,
+  sameAoi,
+} from "./aoi.js";
 export type { BBox } from "./bbox.js";
 export { bboxAreaKm2, sameBbox } from "./bbox.js";
 export { type ParsedAoi, parseAoiInput, parseBboxInput } from "./bbox-input.js";

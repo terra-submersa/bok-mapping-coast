@@ -10,9 +10,13 @@ interface AoiPanelProps {
   envelopeKm2: number | null;
   limitCheck: ProcessingApiLimitCheck | null;
   isDrawing: boolean;
+  isEditing: boolean;
   /** Set when a paste was accepted but not exactly as given — e.g. several polygons. */
   note: string | null;
+  /** Why the last reshaping gesture was refused. */
+  editError: string | null;
   onStartDraw: () => void;
+  onToggleEdit: () => void;
   onClear: () => void;
   onPasteApply: (text: string) => string | null;
 }
@@ -23,8 +27,11 @@ export function AoiPanel({
   envelopeKm2,
   limitCheck,
   isDrawing,
+  isEditing,
   note,
+  editError,
   onStartDraw,
+  onToggleEdit,
   onClear,
   onPasteApply,
 }: AoiPanelProps) {
@@ -44,12 +51,23 @@ export function AoiPanel({
     <CollapsibleSection id="aoi" title="Area of interest">
       <div className="row">
         <button type="button" onClick={onStartDraw} disabled={isDrawing}>
-          {isDrawing ? "Drawing… click each corner, then close the shape" : "Draw AOI"}
+          {isDrawing ? "Drawing… click each corner, then close" : "Draw AOI"}
+        </button>
+        <button type="button" onClick={onToggleEdit} disabled={!aoi || isDrawing}>
+          {isEditing ? "Done" : "Reshape"}
         </button>
         <button type="button" onClick={onClear} disabled={!aoi && !isDrawing}>
           Clear
         </button>
       </div>
+
+      {isEditing && (
+        <p className="hint">
+          Drag a corner to move it, click a midpoint to add one, shift-click (or right-click) a
+          corner to delete it.
+        </p>
+      )}
+      {editError && <p className="error">{editError}</p>}
 
       <div style={{ marginTop: 10 }}>
         <label htmlFor="aoi-paste">Or paste a bbox / GeoJSON:</label>
