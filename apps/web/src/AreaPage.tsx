@@ -10,6 +10,7 @@ import { AccordionContext } from "./AccordionContext.js";
 import { AoiPanel } from "./AoiPanel.js";
 import { useMapControls } from "./MapLayout.js";
 import { useProject } from "./ProjectContext.js";
+import { ProjectPanel } from "./ProjectPanel.js";
 import { ZonePanel } from "./ZonePanel.js";
 
 /**
@@ -97,6 +98,7 @@ export function AreaPage() {
           </>
         }
       />
+      <ProjectPanel />
     </AccordionContext.Provider>
   );
 }

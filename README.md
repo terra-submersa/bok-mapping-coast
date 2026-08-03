@@ -59,6 +59,19 @@ pnpm lint
 ./scripts/setup-hooks.sh        # wire up local pre-commit / commit-msg hooks
 ```
 
+### Environment
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CDSE_OAUTH_CLIENT_ID` / `_SECRET` | — | Copernicus credentials. Required before any composite can be fetched. |
+| `COMPOSITE_CACHE_DIR` | `.cache/composites` | Cached Processing API responses. Safe to delete, expensive to refill. |
+| `PROJECT_DB_PATH` | `.cache/projects.sqlite` | Saved projects. **Not** safe to delete — the only copy of your AOIs and zones. |
+| `PORT` | `8787` | API port. |
+
+Projects use `node:sqlite`, which is in Node 22's standard library, so the API
+prints `ExperimentalWarning: SQLite is an experimental feature` on startup. That
+is expected — it needs no flag, and it buys a database with no dependency.
+
 `scripts/bootstrap-github.sh` created the initial labels, milestone and Walking
 Skeleton issues. It has already been run and is kept for reference only — the
 backlog has since moved on in GitHub, and re-running it would create duplicates.

@@ -35,6 +35,13 @@ export {
   SENTINEL2_NATIVE_RESOLUTION_M,
 } from "./processing-limit.js";
 export {
+  PROJECT_SCHEMA_VERSION,
+  type ProjectDocument,
+  type ProjectParams,
+  parseProjectDocument,
+  projectSlug,
+} from "./project.js";
+export {
   type ContourRing,
   contourRings,
   findRingContaining,

@@ -20,3 +20,12 @@ export function readCdseCredentials(env: NodeJS.ProcessEnv = process.env): CdseC
 export function readCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.COMPOSITE_CACHE_DIR ?? ".cache/composites";
 }
+
+/**
+ * SQLite file holding named projects (issue #8). Unlike the composite cache this is
+ * *not* safe to delete — it is the only copy of the AOI and the hand-drawn zones a
+ * Planner has built up. Gitignored, since it is a working file rather than source.
+ */
+export function readProjectDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return env.PROJECT_DB_PATH ?? ".cache/projects.sqlite";
+}

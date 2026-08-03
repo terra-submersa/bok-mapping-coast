@@ -5,8 +5,10 @@ import { createCompositeCache } from "./cache.js";
 import { createProcessClient } from "./cdse/process.js";
 import { createTokenSource } from "./cdse/token.js";
 import { type CompositeService, createCompositeService } from "./composite.js";
-import { readCacheDir, readCdseCredentials } from "./config.js";
+import { readCacheDir, readCdseCredentials, readProjectDbPath } from "./config.js";
+import { createProjectStore, type ProjectStore } from "./projects/store.js";
 import { createCompositeRoutes } from "./routes/composite.js";
+import { createProjectRoutes } from "./routes/projects.js";
 
 const app = new Hono();
 
@@ -31,7 +33,15 @@ function getService(): CompositeService {
   return service;
 }
 
+/** Opened on first use, same as the composite service: a clone with no .env still boots. */
+let projectStore: ProjectStore | undefined;
+function getProjectStore(): ProjectStore {
+  if (!projectStore) projectStore = createProjectStore(readProjectDbPath());
+  return projectStore;
+}
+
 app.route("/api", createCompositeRoutes({ get: (request) => getService().get(request) }));
+app.route("/api", createProjectRoutes(getProjectStore));
 
 const port = Number(process.env.PORT ?? 8787);
 

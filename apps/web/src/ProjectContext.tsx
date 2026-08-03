@@ -1,4 +1,12 @@
-import { type Aoi, aoiEnvelope, MIN_RING_AREA_M2, sameBbox } from "@bok/core";
+import {
+  type Aoi,
+  aoiEnvelope,
+  MIN_RING_AREA_M2,
+  PROJECT_SCHEMA_VERSION,
+  type ProjectDocument,
+  projectSlug,
+  sameBbox,
+} from "@bok/core";
 import {
   createContext,
   type ReactNode,
@@ -13,6 +21,15 @@ import { type Composite, fetchComposite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
+import {
+  deleteProject as deleteProjectRequest,
+  fetchProject,
+  listProjects,
+  loadLastOpened,
+  type ProjectSummary,
+  saveProject,
+  storeLastOpened,
+} from "./projects.js";
 import {
   loadStoredExclusions,
   loadStoredInclusions,
@@ -91,6 +108,20 @@ export interface ProjectContextValue {
   minRingAreaM2: number;
   setMinRingAreaM2: (value: number) => void;
 
+  /**
+   * Named projects (issue #8). The working draft lives in localStorage and survives a
+   * reload whether or not it has been saved; a *project* is a named snapshot of it on
+   * the API, which is what makes Kiladha and a later site separable.
+   */
+  projectName: string;
+  setProjectName: (name: string) => void;
+  projects: ProjectSummary[];
+  projectError: string | null;
+  refreshProjects: () => Promise<void>;
+  saveCurrentProject: () => Promise<void>;
+  openProject: (id: string) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+
   /** Which contour ring is the flight area (story 4.1). */
   selectedAnchor: GeoJSON.Position | null;
   setSelectedAnchor: (anchor: GeoJSON.Position | null) => void;
@@ -154,6 +185,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
    */
   const [selectedAnchor, setSelectedAnchor] = useState<GeoJSON.Position | null>(null);
   const [allRingsSelected, setAllRingsSelected] = useState(false);
+
+  const [projectName, setProjectName] = useState(() => loadLastOpened() ?? "Kiladha");
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectError, setProjectError] = useState<string | null>(null);
 
   useEffect(() => storeExclusions(exclusions), [exclusions]);
   useEffect(() => storeInclusions(inclusions), [inclusions]);
@@ -220,6 +255,107 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     clearComposite();
   }, [clearComposite]);
 
+  /**
+   * The current working state as a storable document — inputs only. The boundary is
+   * derived and deliberately absent: storing it would let a saved file disagree with
+   * the parameters sitting beside it (D10).
+   */
+  const toDocument = useCallback(
+    (): ProjectDocument => ({
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      name: projectName.trim() || "Untitled",
+      aoi,
+      exclusions,
+      inclusions,
+      dateRange: { from, to },
+      params: { threshold, tolerance, bufferMetres, coastMetres, minRingAreaM2 },
+    }),
+    [
+      projectName,
+      aoi,
+      exclusions,
+      inclusions,
+      from,
+      to,
+      threshold,
+      tolerance,
+      bufferMetres,
+      coastMetres,
+      minRingAreaM2,
+    ],
+  );
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      setProjects(await listProjects());
+      setProjectError(null);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "Could not list projects.");
+    }
+  }, []);
+
+  const saveCurrentProject = useCallback(async () => {
+    const document = toDocument();
+    try {
+      await saveProject(projectSlug(document.name), document);
+      storeLastOpened(document.name);
+      setProjectError(null);
+      await refreshProjects();
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : "Could not save the project.");
+    }
+  }, [toDocument, refreshProjects]);
+
+  const openProject = useCallback(
+    async (id: string) => {
+      try {
+        const document = await fetchProject(id);
+        // Switching projects must not carry state across (issue #2's criterion, and
+        // #8's). Dropping the composite is the blunt version of that and the right
+        // one: the new AOI has its own envelope, so the old raster is meaningless.
+        clearComposite();
+        aoiRef.current = document.aoi;
+        setAoiState(document.aoi);
+        if (document.aoi) storeAoi(document.aoi);
+        else clearStoredAoi();
+        setExclusions(document.exclusions);
+        setInclusions(document.inclusions);
+        setFrom(document.dateRange.from);
+        setTo(document.dateRange.to);
+        setTolerance(document.params.tolerance);
+        setBufferMetres(document.params.bufferMetres);
+        setCoastMetres(document.params.coastMetres);
+        setMinRingAreaM2(document.params.minRingAreaM2);
+        setProjectName(document.name);
+        storeLastOpened(document.name);
+        setProjectError(null);
+      } catch (err) {
+        setProjectError(err instanceof Error ? err.message : "Could not open the project.");
+      }
+    },
+    [clearComposite],
+  );
+
+  const deleteProject = useCallback(
+    async (id: string) => {
+      try {
+        await deleteProjectRequest(id);
+        setProjectError(null);
+        await refreshProjects();
+      } catch (err) {
+        setProjectError(err instanceof Error ? err.message : "Could not delete the project.");
+      }
+    },
+    [refreshProjects],
+  );
+
+  // One listing at mount. A missing or unreachable API leaves `projectError` set and
+  // everything else working — the draft is in localStorage, so planning is possible
+  // without the project store.
+  useEffect(() => {
+    void refreshProjects();
+  }, [refreshProjects]);
+
   const loadComposite = useCallback(async () => {
     const current = aoiRef.current;
     if (!current) return;
@@ -282,6 +418,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setCoastMetres,
         minRingAreaM2,
         setMinRingAreaM2,
+        projectName,
+        setProjectName,
+        projects,
+        projectError,
+        refreshProjects,
+        saveCurrentProject,
+        openProject,
+        deleteProject,
         selectedAnchor,
         setSelectedAnchor,
         allRingsSelected,
