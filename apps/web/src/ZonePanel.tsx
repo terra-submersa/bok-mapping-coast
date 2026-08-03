@@ -1,7 +1,16 @@
 import { polygonAreaKm2 } from "@bok/core";
+import type { ReactNode } from "react";
 import { CollapsibleSection } from "./CollapsibleSection.js";
 
-interface ExclusionPanelProps {
+interface ZonePanelProps {
+  /** Accordion id — must be unique across the sidebar it is rendered in. */
+  id: string;
+  title: string;
+  drawLabel: string;
+  emptyHint: ReactNode;
+  footerHint: ReactNode;
+  /** Shown in red, e.g. when a zone falls outside the AOI. */
+  warning?: ReactNode;
   zones: GeoJSON.Polygon[];
   isDrawing: boolean;
   onStartDraw: () => void;
@@ -10,25 +19,31 @@ interface ExclusionPanelProps {
 }
 
 /**
- * Areas cut out of the survey polygon: the harbour, moorings, a swimming beach
- * (issue #17).
+ * A list of hand-drawn zones, drawn one at a time and removable individually.
  *
- * A zone is an *input*, like the AOI — drawn by hand, stored with the project, and
- * re-applied to whatever boundary the current parameters produce (D10). Changing the
- * threshold does not disturb it.
+ * Shared by exclusions (#17, cut) and inclusions (#16, added) because the two are
+ * the same object with opposite signs: a polygon the Planner drew, stored with the
+ * project, and re-applied to whatever boundary the current parameters produce (D10).
+ * Only the wording and where they sit in the chain differ.
  */
-export function ExclusionPanel({
+export function ZonePanel({
+  id,
+  title,
+  drawLabel,
+  emptyHint,
+  footerHint,
+  warning,
   zones,
   isDrawing,
   onStartDraw,
   onRemove,
   onClearAll,
-}: ExclusionPanelProps) {
+}: ZonePanelProps) {
   return (
-    <CollapsibleSection id="exclusions" title={`Exclusion zones (${zones.length})`}>
+    <CollapsibleSection id={id} title={`${title} (${zones.length})`}>
       <div className="row">
         <button type="button" onClick={onStartDraw} disabled={isDrawing}>
-          {isDrawing ? "Drawing… click each corner, then close" : "Draw exclusion"}
+          {isDrawing ? "Drawing… click each corner, then close" : drawLabel}
         </button>
         <button type="button" onClick={onClearAll} disabled={zones.length === 0}>
           Clear all
@@ -36,10 +51,7 @@ export function ExclusionPanel({
       </div>
 
       {zones.length === 0 ? (
-        <p className="hint">
-          Nothing excluded. Draw over anything the survey must not cover — moorings, the harbour
-          mouth, a swimming area.
-        </p>
+        <p className="hint">{emptyHint}</p>
       ) : (
         <ul className="stat">
           {zones.map((zone, index) => (
@@ -62,11 +74,8 @@ export function ExclusionPanel({
         </ul>
       )}
 
-      <p className="hint">
-        Zones are cut from the exported KML, not merely drawn over it. A zone in the middle of the
-        survey area becomes a hole — which reaches Pilot 2 as an inner boundary, and is the part of
-        the export least proven on the RC (issue #39).
-      </p>
+      {warning && <p className="error">{warning}</p>}
+      <p className="hint">{footerHint}</p>
     </CollapsibleSection>
   );
 }

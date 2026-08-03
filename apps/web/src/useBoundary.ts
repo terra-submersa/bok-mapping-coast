@@ -1,4 +1,5 @@
 import {
+  addZones,
   bufferPolygon,
   type ContourRing,
   clipToAoi,
@@ -44,8 +45,10 @@ export interface BoundaryState {
   bufferedPolygon: GeoJSON.MultiPolygon | null;
   bufferedStats: PolygonStats;
   mergedPolygon: GeoJSON.MultiPolygon | null;
-  /** Before the hand-drawn cuts — what the tolerance slider's counts are about. */
+  /** Before the hand-drawn zones — what the tolerance slider's counts are about. */
   simplified: GeoJSON.MultiPolygon | null;
+  /** Inclusions after clipping to the AOI, so a panel can say what was trimmed. */
+  clippedInclusions: GeoJSON.MultiPolygon[];
   boundary: GeoJSON.MultiPolygon | null;
 }
 
@@ -63,6 +66,7 @@ export function useBoundary(): BoundaryState {
   const {
     aoi,
     exclusions,
+    inclusions,
     composite,
     threshold,
     tolerance,
@@ -198,7 +202,25 @@ export function useBoundary(): BoundaryState {
   );
 
   /**
-   * Hand-drawn cuts, applied **after** simplification (issue #17).
+   * Hand-drawn additions, clipped to the AOI first.
+   *
+   * The clip keeps `boundary ⊆ AOI` true whatever the Planner draws, so the AOI
+   * stays the one hard limit on where a mission can go (issue #16). A zone drawn
+   * wholly outside it contributes nothing, and the panel says so.
+   */
+  const clippedInclusions = useMemo(
+    () => (effectiveAoi ? inclusions.map((zone) => clipToAoi(zone, effectiveAoi)) : []),
+    [inclusions, effectiveAoi],
+  );
+
+  const shapedPolygon = useMemo(
+    () => (simplified ? addZones(simplified, clippedInclusions) : null),
+    [simplified, clippedInclusions],
+  );
+
+  /**
+   * Hand-drawn cuts, applied **after** simplification and after the additions
+   * (issue #17).
    *
    * Douglas-Peucker moves vertices by up to `tolerance`, so simplifying a cut would
    * reopen it by up to that distance. An exclusion is a safety constraint — the
@@ -206,10 +228,13 @@ export function useBoundary(): BoundaryState {
    * goes last. The cost is that zone edges are not simplified and the tolerance
    * slider cannot reduce their vertices; `zones.ts` explains why that is the cheaper
    * side of the trade.
+   *
+   * Cuts come after additions so an exclusion always beats an overlapping inclusion —
+   * deterministic, rather than depending on the order they happened to be drawn in.
    */
   const boundary = useMemo(
-    () => (simplified ? subtractZones(simplified, exclusions) : null),
-    [simplified, exclusions],
+    () => (shapedPolygon ? subtractZones(shapedPolygon, exclusions) : null),
+    [shapedPolygon, exclusions],
   );
 
   return {
@@ -222,6 +247,7 @@ export function useBoundary(): BoundaryState {
     bufferedStats,
     mergedPolygon,
     simplified,
+    clippedInclusions,
     boundary,
   };
 }

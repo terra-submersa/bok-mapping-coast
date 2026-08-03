@@ -33,6 +33,7 @@ const DEPTH_LAYER_ID = "depth-raster";
 const RINGS_SOURCE_ID = "rings";
 const BOUNDARY_SOURCE_ID = "boundary";
 const ZONES_SOURCE_ID = "zones";
+const INCLUSIONS_SOURCE_ID = "inclusions";
 
 /**
  * How close a shift-click has to land to count as "on" a vertex. A screen distance,
@@ -116,7 +117,7 @@ function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSO
 
 /** The drawing controls a sidebar panel needs. The map instance itself stays private. */
 /** What a new polygon becomes when the Planner finishes drawing it. */
-export type DrawTarget = "aoi" | "exclusion";
+export type DrawTarget = "aoi" | "exclusion" | "inclusion";
 
 export interface MapContextValue {
   startDraw: (target: DrawTarget) => void;
@@ -177,6 +178,8 @@ function MapSurface() {
     allRingsSelected,
     exclusions,
     addExclusion,
+    inclusions,
+    addInclusion,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
 
@@ -298,12 +301,13 @@ function MapSurface() {
         setIsDrawing(false);
         setDrawTarget(null);
 
-        if (target === "exclusion") {
+        if (target === "exclusion" || target === "inclusion") {
           // Zones are a list, not the one shape being reshaped, so terra-draw's copy
           // goes; the map renders them from state like the AOI outside edit mode.
           draw.clear();
           draw.stop();
-          addExclusion(feature.geometry);
+          if (target === "exclusion") addExclusion(feature.geometry);
+          else addInclusion(feature.geometry);
           return;
         }
 
@@ -382,6 +386,22 @@ function MapSurface() {
         type: "line",
         source: BOUNDARY_SOURCE_ID,
         paint: { "line-color": "#2e7d32", "line-width": 3 },
+      });
+
+      // Inclusion zones, under the exclusions: an addition can legitimately be cut
+      // by one, and the cut has to be the thing you see (issue #16).
+      map.addSource(INCLUSIONS_SOURCE_ID, { type: "geojson", data: emptyFeatureCollection() });
+      map.addLayer({
+        id: "inclusions-fill",
+        type: "fill",
+        source: INCLUSIONS_SOURCE_ID,
+        paint: { "fill-color": "#00838f", "fill-opacity": 0.25 },
+      });
+      map.addLayer({
+        id: "inclusions-outline",
+        type: "line",
+        source: INCLUSIONS_SOURCE_ID,
+        paint: { "line-color": "#00838f", "line-width": 2, "line-dasharray": [2, 1] },
       });
 
       // Exclusion zones, drawn over the boundary: a cut has to be legible against
@@ -483,6 +503,12 @@ function MapSurface() {
     const source = mapRef.current?.getSource(ZONES_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(zonesFeatureCollection(exclusions));
   }, [overlaysReady, exclusions]);
+
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(INCLUSIONS_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(zonesFeatureCollection(inclusions));
+  }, [overlaysReady, inclusions]);
 
   // Dropping the composite has to take its layer with it, or a stale depth ramp stays
   // painted over an AOI it no longer belongs to — the bug issue #2's closing note is about.

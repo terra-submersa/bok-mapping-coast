@@ -5,10 +5,12 @@ import { useBoundaryState } from "./BoundaryContext.js";
 import { BufferPanel } from "./BufferPanel.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { ExportPanel } from "./ExportPanel.js";
+import { useMapControls } from "./MapLayout.js";
 import { useProject } from "./ProjectContext.js";
 import { RingPanel } from "./RingPanel.js";
 import { SimplifyPanel } from "./SimplifyPanel.js";
 import { ThresholdPanel } from "./ThresholdPanel.js";
+import { ZonePanel } from "./ZonePanel.js";
 
 /**
  * Step two: *how deep*. Everything between the AOI and a downloadable KML — the
@@ -44,8 +46,14 @@ export function BoundaryPage() {
     setSelectedAnchor,
     allRingsSelected,
     setAllRingsSelected,
+    isDrawing,
     exclusions,
+    inclusions,
+    removeInclusion,
+    clearInclusions,
   } = useProject();
+
+  const { startDraw, drawTarget } = useMapControls();
 
   const {
     contour,
@@ -55,8 +63,15 @@ export function BoundaryPage() {
     bufferedStats,
     mergedPolygon,
     simplified,
+    clippedInclusions,
     boundary,
   } = useBoundaryState();
+
+  // An inclusion drawn outside the AOI is clipped away to nothing. Saying so beats
+  // leaving the Planner to wonder why the boundary did not move (issue #16).
+  const strandedInclusions = clippedInclusions.filter(
+    (zone) => zone.coordinates.length === 0,
+  ).length;
 
   const [activeSection, setActiveSection] = useState("depth");
 
@@ -104,6 +119,36 @@ export function BoundaryPage() {
             setSelectedAnchor(ring.anchor);
           }}
           onSelectAll={() => setAllRingsSelected(true)}
+        />
+      )}
+      {selectedRing && threshold !== null && (
+        <ZonePanel
+          id="inclusions"
+          title="Inclusion zones"
+          drawLabel="Draw inclusion"
+          zones={inclusions}
+          isDrawing={isDrawing && drawTarget === "inclusion"}
+          onStartDraw={() => startDraw("inclusion")}
+          onRemove={removeInclusion}
+          onClearAll={clearInclusions}
+          warning={
+            strandedInclusions > 0 ? (
+              <>
+                {strandedInclusions} zone{strandedInclusions === 1 ? " falls" : "s fall"} outside
+                the AOI and {strandedInclusions === 1 ? "is" : "are"} ignored. The AOI is the hard
+                limit on where a mission can go — widen it on the Area step first.
+              </>
+            ) : undefined
+          }
+          emptyHint="Nothing added. Draw over water the contour missed — a Posidonia meadow read as deep is the usual reason."
+          footerHint={
+            <>
+              Added to the boundary, and stored with the project. Because a zone is an input rather
+              than an edit, changing the threshold re-applies it instead of wiping it — which is
+              what settled story 4.4 (D10). Exclusions are cut afterwards, so a cut always beats an
+              overlapping addition.
+            </>
+          }
         />
       )}
       {selectedRing && threshold !== null && (

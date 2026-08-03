@@ -8,9 +8,9 @@ import {
 import { useMemo, useState } from "react";
 import { AccordionContext } from "./AccordionContext.js";
 import { AoiPanel } from "./AoiPanel.js";
-import { ExclusionPanel } from "./ExclusionPanel.js";
 import { useMapControls } from "./MapLayout.js";
 import { useProject } from "./ProjectContext.js";
+import { ZonePanel } from "./ZonePanel.js";
 
 /**
  * Step one: *where*. Draw and reshape the AOI, and — once #17 lands — cut the
@@ -79,12 +79,23 @@ export function AreaPage() {
         onClear={handleClear}
         onPasteApply={handlePasteApply}
       />
-      <ExclusionPanel
+      <ZonePanel
+        id="exclusions"
+        title="Exclusion zones"
+        drawLabel="Draw exclusion"
         zones={exclusions}
         isDrawing={isDrawing && drawTarget === "exclusion"}
         onStartDraw={() => startDraw("exclusion")}
         onRemove={removeExclusion}
         onClearAll={clearExclusions}
+        emptyHint="Nothing excluded. Draw over anything the survey must not cover — moorings, the harbour mouth, a swimming area."
+        footerHint={
+          <>
+            Zones are cut from the exported KML, not merely drawn over it. A zone in the middle of
+            the survey area becomes a hole — which reaches Pilot 2 as an inner boundary, and is the
+            part of the export least proven on the RC (issue #39).
+          </>
+        }
       />
     </AccordionContext.Provider>
   );

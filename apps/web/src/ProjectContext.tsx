@@ -13,7 +13,12 @@ import { type Composite, fetchComposite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
-import { loadStoredExclusions, storeExclusions } from "./zone-storage.js";
+import {
+  loadStoredExclusions,
+  loadStoredInclusions,
+  storeExclusions,
+  storeInclusions,
+} from "./zone-storage.js";
 
 /** Default composite window: the most recent complete summer, as in the spike. */
 const DEFAULT_FROM = "2025-06-01";
@@ -42,6 +47,18 @@ export interface ProjectContextValue {
   addExclusion: (zone: GeoJSON.Polygon) => void;
   removeExclusion: (index: number) => void;
   clearExclusions: () => void;
+
+  /**
+   * Hand-drawn areas *added* to the flight boundary — where SDB read a Posidonia
+   * meadow as deep and bit the contour inward (issue #16). The mirror of an
+   * exclusion, and the reason story 4.4 stopped being contested: a correction that
+   * is an input cannot be destroyed by a recompute, so there is nothing to warn
+   * about and no diff to replay.
+   */
+  inclusions: GeoJSON.Polygon[];
+  addInclusion: (zone: GeoJSON.Polygon) => void;
+  removeInclusion: (index: number) => void;
+  clearInclusions: () => void;
 
   /** Composite window and the raster fetched for it. */
   from: string;
@@ -106,6 +123,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const aoiRef = useRef<Aoi | null>(aoi);
   const [isDrawing, setIsDrawing] = useState(false);
   const [exclusions, setExclusions] = useState<GeoJSON.Polygon[]>(() => loadStoredExclusions());
+  const [inclusions, setInclusions] = useState<GeoJSON.Polygon[]>(() => loadStoredInclusions());
 
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
@@ -138,6 +156,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [allRingsSelected, setAllRingsSelected] = useState(false);
 
   useEffect(() => storeExclusions(exclusions), [exclusions]);
+  useEffect(() => storeInclusions(inclusions), [inclusions]);
   useEffect(() => storeNumber("tolerance", tolerance), [tolerance]);
   useEffect(() => storeNumber("bufferMetres", bufferMetres), [bufferMetres]);
   useEffect(() => storeNumber("coastMetres", coastMetres), [coastMetres]);
@@ -184,6 +203,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const clearExclusions = useCallback(() => setExclusions([]), []);
 
+  const addInclusion = useCallback((zone: GeoJSON.Polygon) => {
+    setInclusions((current) => [...current, zone]);
+  }, []);
+
+  const removeInclusion = useCallback((index: number) => {
+    setInclusions((current) => current.filter((_, i) => i !== index));
+  }, []);
+
+  const clearInclusions = useCallback(() => setInclusions([]), []);
+
   const clearAoi = useCallback(() => {
     aoiRef.current = null;
     setAoiState(null);
@@ -226,6 +255,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         addExclusion,
         removeExclusion,
         clearExclusions,
+        inclusions,
+        addInclusion,
+        removeInclusion,
+        clearInclusions,
         from,
         to,
         setFrom,

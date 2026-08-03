@@ -1,4 +1,5 @@
 const EXCLUSIONS_KEY = "bok:zones:exclusions";
+const INCLUSIONS_KEY = "bok:zones:inclusions";
 
 /**
  * Hand-drawn zones, persisted between sessions.
@@ -14,6 +15,14 @@ export function loadStoredExclusions(): GeoJSON.Polygon[] {
 
 export function storeExclusions(zones: GeoJSON.Polygon[]): void {
   localStorage.setItem(EXCLUSIONS_KEY, JSON.stringify(zones));
+}
+
+export function loadStoredInclusions(): GeoJSON.Polygon[] {
+  return readPolygons(INCLUSIONS_KEY);
+}
+
+export function storeInclusions(zones: GeoJSON.Polygon[]): void {
+  localStorage.setItem(INCLUSIONS_KEY, JSON.stringify(zones));
 }
 
 function readPolygons(key: string): GeoJSON.Polygon[] {
