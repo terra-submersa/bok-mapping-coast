@@ -19,18 +19,38 @@ export interface DepthPanelProps {
   onLayerViewChange: (value: LayerView) => void;
 }
 
-/** Share of pixels backed by at least one scene — the rest is land, cloud, or nothing. */
+/**
+ * Share of pixels backed by at least one scene — the rest is land, cloud, or nothing.
+ *
+ * The count is exact and the median is sampled. Pushing every water pixel of a tiled
+ * composite into a JS array and sorting it is hundreds of megabytes of boxed doubles
+ * (issue #42), but the count is a number on screen and should not wobble, so it gets its
+ * own counter loop over the whole band.
+ */
 function waterCoverage(composite: Composite): { water: number; medianScenes: number } {
-  const counts: number[] = [];
-  for (const count of composite.sceneCount) {
-    if (count > 0) counts.push(count);
+  const { sceneCount } = composite;
+
+  let water = 0;
+  for (let i = 0; i < sceneCount.length; i++) {
+    if (sceneCount[i] > 0) water++;
   }
-  counts.sort((a, b) => a - b);
+
+  const stride = Math.max(1, Math.ceil(sceneCount.length / MEDIAN_SAMPLES));
+  const sample = new Float64Array(Math.ceil(sceneCount.length / stride));
+  let sampled = 0;
+  for (let i = 0; i < sceneCount.length; i += stride) {
+    if (sceneCount[i] > 0) sample[sampled++] = sceneCount[i];
+  }
+  const sorted = sample.subarray(0, sampled).sort();
+
   return {
-    water: counts.length,
-    medianScenes: counts.length === 0 ? 0 : counts[Math.floor(counts.length / 2)],
+    water,
+    medianScenes: sampled === 0 ? 0 : sorted[Math.floor(sampled / 2)],
   };
 }
+
+/** Enough to place a median to well within one scene; see waterCoverage. */
+const MEDIAN_SAMPLES = 1_000_000;
 
 export function DepthPanel({
   hasAoi,

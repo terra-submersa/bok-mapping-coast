@@ -51,18 +51,70 @@ export function sceneCountRampColour(t: number): [number, number, number] {
   return interpolateRamp(SCENE_COUNT_RAMP, t);
 }
 
+/**
+ * Longest side of the raster that reaches the canvas. A tiled composite (issue #41) can
+ * be 7500 px across, and `paintLayer` would build a canvas that size and then call
+ * `toDataURL` on it — a few hundred megabytes of RGBA plus a base64 string of it.
+ *
+ * Only the *display* is decimated. Contouring, `landMask` and `coastalRibbon` keep
+ * reading the full native grid, so nothing about the science is resampled.
+ */
+export const MAX_DISPLAY_SIDE = 2048;
+
+export interface DisplayGrid {
+  /** Sample every nth pixel on both axes. 1 means no decimation at all. */
+  stride: number;
+  width: number;
+  height: number;
+}
+
+/** The grid actually painted: the composite itself below the cap, a decimation above it. */
+export function displayGrid(
+  size: { width: number; height: number },
+  maxSide = MAX_DISPLAY_SIDE,
+): DisplayGrid {
+  const stride = Math.max(1, Math.ceil(Math.max(size.width, size.height) / maxSide));
+  return {
+    stride,
+    width: Math.ceil(size.width / stride),
+    height: Math.ceil(size.height / stride),
+  };
+}
+
+/**
+ * Cap on how many values the range functions sort. Beyond this they sample.
+ *
+ * Sorting every pixel of a 56-megapixel mosaic means a boxed array of hundreds of
+ * megabytes; a percentile stretch from a million-pixel systematic sample is
+ * indistinguishable at that scale. Below the cap the stride is 1 and nothing changes,
+ * which is every AOI that was drawable before tiling.
+ */
+const MAX_RANGE_SAMPLES = 1_000_000;
+
+function sampleStride(length: number, width: number): number {
+  const stride = Math.max(1, Math.ceil(length / MAX_RANGE_SAMPLES));
+  // A stride that divides the row width lands on the same column of every row and
+  // samples a stripe of the bay rather than the bay. Nudging it breaks the alignment.
+  return stride > 1 && width % stride === 0 ? stride + 1 : stride;
+}
+
 /** Ratio range across water pixels only — land and cloud would skew the stretch. */
 export function waterRange(composite: Composite): Range | null {
-  const water: number[] = [];
-  for (let i = 0; i < composite.ratio.length; i++) {
-    if (composite.sceneCount[i] > 0) water.push(composite.ratio[i]);
+  const { ratio, sceneCount, width } = composite;
+  const stride = sampleStride(ratio.length, width);
+  const sample = new Float64Array(Math.ceil(ratio.length / stride));
+  let count = 0;
+  for (let i = 0; i < ratio.length; i += stride) {
+    if (sceneCount[i] > 0) sample[count++] = ratio[i];
   }
-  return percentileRange(water);
+  return percentileRange(sample.subarray(0, count));
 }
 
 export interface RenderOptions {
   /** Pixels with fewer contributing scenes than this are drawn transparent. */
   minSceneCount?: number;
+  /** Which pixels to paint. Defaults to the decimation implied by MAX_DISPLAY_SIDE. */
+  display?: DisplayGrid;
 }
 
 /**
@@ -74,35 +126,47 @@ export interface RenderOptions {
 export function renderCompositeRgba(
   composite: Composite,
   range: Range,
-  { minSceneCount = 1 }: RenderOptions = {},
+  { minSceneCount = 1, display = displayGrid(composite) }: RenderOptions = {},
 ): Uint8ClampedArray {
-  const { width, height, ratio, sceneCount } = composite;
+  const { ratio, sceneCount } = composite;
+  const { stride, width, height } = display;
   const rgba = new Uint8ClampedArray(width * height * 4);
 
-  for (let i = 0; i < ratio.length; i++) {
-    const offset = i * 4;
-    if (sceneCount[i] < minSceneCount) {
-      rgba[offset + 3] = 0;
-      continue;
+  for (let y = 0; y < height; y++) {
+    const sourceRow = y * stride * composite.width;
+    for (let x = 0; x < width; x++) {
+      const source = sourceRow + x * stride;
+      const offset = (y * width + x) * 4;
+      if (sceneCount[source] < minSceneCount) {
+        rgba[offset + 3] = 0;
+        continue;
+      }
+      const [r, g, b] = rampColour(normalise(ratio[source], range));
+      rgba[offset] = r;
+      rgba[offset + 1] = g;
+      rgba[offset + 2] = b;
+      rgba[offset + 3] = 255;
     }
-    const [r, g, b] = rampColour(normalise(ratio[i], range));
-    rgba[offset] = r;
-    rgba[offset + 1] = g;
-    rgba[offset + 2] = b;
-    rgba[offset + 3] = 255;
   }
 
   return rgba;
 }
 
-/** Browser-side wrapper: the same pixels, boxed for putImageData. */
+/**
+ * Browser-side wrapper: the same pixels, boxed for putImageData.
+ *
+ * The ImageData carries the *display* dimensions, which for a tiled composite are
+ * smaller than the raster's. Callers must size their canvas from this rather than from
+ * `composite.width` — that is the whole point of the decimation.
+ */
 export function renderComposite(
   composite: Composite,
   range: Range,
   options: RenderOptions = {},
 ): ImageData {
-  const image = new ImageData(composite.width, composite.height);
-  image.data.set(renderCompositeRgba(composite, range, options));
+  const display = options.display ?? displayGrid(composite);
+  const image = new ImageData(display.width, display.height);
+  image.data.set(renderCompositeRgba(composite, range, { ...options, display }));
   return image;
 }
 
@@ -113,29 +177,41 @@ export function renderComposite(
  * distrusting.
  */
 export function sceneCountRange(composite: Composite): Range | null {
-  const counts: number[] = [];
-  for (let i = 0; i < composite.sceneCount.length; i++) {
-    if (composite.sceneCount[i] > 0) counts.push(composite.sceneCount[i]);
+  const { sceneCount, width } = composite;
+  const stride = sampleStride(sceneCount.length, width);
+  const sample = new Float64Array(Math.ceil(sceneCount.length / stride));
+  let count = 0;
+  for (let i = 0; i < sceneCount.length; i += stride) {
+    if (sceneCount[i] > 0) sample[count++] = sceneCount[i];
   }
-  return percentileRange(counts, 0, 100);
+  return percentileRange(sample.subarray(0, count), 0, 100);
 }
 
 /** Paints band 2 (scene count) as RGBA bytes, land left fully transparent. */
-export function renderSceneCountRgba(composite: Composite, range: Range): Uint8ClampedArray {
-  const { width, height, sceneCount } = composite;
+export function renderSceneCountRgba(
+  composite: Composite,
+  range: Range,
+  { display = displayGrid(composite) }: { display?: DisplayGrid } = {},
+): Uint8ClampedArray {
+  const { sceneCount } = composite;
+  const { stride, width, height } = display;
   const rgba = new Uint8ClampedArray(width * height * 4);
 
-  for (let i = 0; i < sceneCount.length; i++) {
-    const offset = i * 4;
-    if (sceneCount[i] <= 0) {
-      rgba[offset + 3] = 0;
-      continue;
+  for (let y = 0; y < height; y++) {
+    const sourceRow = y * stride * composite.width;
+    for (let x = 0; x < width; x++) {
+      const source = sourceRow + x * stride;
+      const offset = (y * width + x) * 4;
+      if (sceneCount[source] <= 0) {
+        rgba[offset + 3] = 0;
+        continue;
+      }
+      const [r, g, b] = sceneCountRampColour(normalise(sceneCount[source], range));
+      rgba[offset] = r;
+      rgba[offset + 1] = g;
+      rgba[offset + 2] = b;
+      rgba[offset + 3] = 255;
     }
-    const [r, g, b] = sceneCountRampColour(normalise(sceneCount[i], range));
-    rgba[offset] = r;
-    rgba[offset + 1] = g;
-    rgba[offset + 2] = b;
-    rgba[offset + 3] = 255;
   }
 
   return rgba;
@@ -143,7 +219,8 @@ export function renderSceneCountRgba(composite: Composite, range: Range): Uint8C
 
 /** Browser-side wrapper: the same pixels, boxed for putImageData. */
 export function renderSceneCount(composite: Composite, range: Range): ImageData {
-  const image = new ImageData(composite.width, composite.height);
-  image.data.set(renderSceneCountRgba(composite, range));
+  const display = displayGrid(composite);
+  const image = new ImageData(display.width, display.height);
+  image.data.set(renderSceneCountRgba(composite, range, { display }));
   return image;
 }

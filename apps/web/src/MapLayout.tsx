@@ -216,11 +216,15 @@ function MapSurface() {
     const range = mode === "depth" ? waterRange(next) : sceneCountRange(next);
     if (!range) return;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = next.width;
-    canvas.height = next.height;
+    // Sized from the ImageData, not from the composite: a tiled raster (issue #41) can be
+    // 7500 px across, and a canvas that size — plus the toDataURL below — is hundreds of
+    // megabytes. The renderers decimate for display; the canvas has to follow them or the
+    // pixels land in the wrong place (issue #42).
     const imageData =
       mode === "depth" ? renderComposite(next, range) : renderSceneCount(next, range);
+    const canvas = document.createElement("canvas");
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
     canvas.getContext("2d")?.putImageData(imageData, 0, 0);
 
     const [minLon, minLat, maxLon, maxLat] = next.bbox;

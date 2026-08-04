@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Composite } from "./composite.js";
 import {
+  displayGrid,
+  MAX_DISPLAY_SIDE,
   rampColour,
   renderCompositeRgba,
   renderSceneCountRgba,
@@ -17,6 +19,15 @@ function composite(ratio: number[], sceneCount: number[]): Composite {
     sceneCount: Float32Array.from(sceneCount),
     bbox: [23.105, 37.418, 23.14, 37.435],
   };
+}
+
+/** A raster of a given shape whose ratio is the pixel index, so sampling is traceable. */
+function grid(width: number, height: number): Composite {
+  const size = width * height;
+  const ratio = new Float32Array(size);
+  const sceneCount = new Float32Array(size).fill(1);
+  for (let i = 0; i < size; i++) ratio[i] = i;
+  return { width, height, ratio, sceneCount, bbox: [23.105, 37.418, 23.14, 37.435] };
 }
 
 describe("rampColour", () => {
@@ -114,5 +125,132 @@ describe("renderSceneCountRgba", () => {
     expect(thin).not.toEqual(solid);
     expect(rgba[3]).toBe(255);
     expect(rgba[7]).toBe(255);
+  });
+});
+
+describe("displayGrid", () => {
+  it("leaves a small raster alone", () => {
+    expect(displayGrid({ width: 370, height: 190 })).toEqual({
+      stride: 1,
+      width: 370,
+      height: 190,
+    });
+  });
+
+  it("decimates only once the longest side passes the cap", () => {
+    expect(displayGrid({ width: MAX_DISPLAY_SIDE, height: 10 }).stride).toBe(1);
+    expect(displayGrid({ width: MAX_DISPLAY_SIDE + 1, height: 10 }).stride).toBe(2);
+  });
+
+  it("keeps a 3x3 mosaic under the cap on both sides", () => {
+    const shown = displayGrid({ width: 7500, height: 7500 });
+    expect(shown.stride).toBe(4);
+    expect(shown.width).toBeLessThanOrEqual(MAX_DISPLAY_SIDE);
+    expect(shown.height).toBeLessThanOrEqual(MAX_DISPLAY_SIDE);
+  });
+
+  it("decimates by the longest side, so the aspect ratio survives", () => {
+    const shown = displayGrid({ width: 8000, height: 2000 });
+    expect(shown.width / shown.height).toBeCloseTo(4, 1);
+  });
+
+  it("honours an explicit cap", () => {
+    expect(displayGrid({ width: 100, height: 100 }, 10)).toEqual({
+      stride: 10,
+      width: 10,
+      height: 10,
+    });
+  });
+});
+
+describe("strided rendering", () => {
+  it("emits exactly the display grid's pixels, not the raster's", () => {
+    const source = grid(100, 100);
+    const display = displayGrid(source, 10);
+    const rgba = renderCompositeRgba(source, { min: 0, max: 9999 }, { display });
+    expect(rgba.length).toBe(10 * 10 * 4);
+  });
+
+  it("samples the top-left pixel of each block", () => {
+    const source = grid(4, 4);
+    const display = { stride: 2, width: 2, height: 2 };
+    const rgba = renderCompositeRgba(source, { min: 0, max: 15 }, { display });
+
+    // Row 1 of the display is row 2 of the source, so its first pixel is index 8.
+    const expected = rampColour(8 / 15);
+    expect([rgba[8], rgba[9], rgba[10]]).toEqual(expected);
+  });
+
+  it("is unchanged at stride 1", () => {
+    const source = grid(4, 4);
+    const strided = renderCompositeRgba(
+      source,
+      { min: 0, max: 15 },
+      { display: displayGrid(source) },
+    );
+    const plain = renderCompositeRgba(source, { min: 0, max: 15 });
+    expect(Array.from(strided)).toEqual(Array.from(plain));
+  });
+
+  it("carries transparency through the decimation", () => {
+    const source = grid(4, 4);
+    source.sceneCount[0] = 0;
+    const rgba = renderCompositeRgba(
+      source,
+      { min: 0, max: 15 },
+      { display: { stride: 2, width: 2, height: 2 } },
+    );
+    expect(rgba[3]).toBe(0);
+    expect(rgba[7]).toBe(255);
+  });
+
+  it("decimates the scene-count layer the same way", () => {
+    const source = grid(100, 100);
+    const rgba = renderSceneCountRgba(
+      source,
+      { min: 0, max: 2 },
+      { display: displayGrid(source, 10) },
+    );
+    expect(rgba.length).toBe(10 * 10 * 4);
+  });
+});
+
+describe("range sampling on large rasters", () => {
+  /** 1.2M pixels: past the sampling threshold, but cheap enough for a unit test. */
+  const large = () => grid(1200, 1000);
+
+  it("returns a range close to the exact one", () => {
+    const source = large();
+    const range = waterRange(source);
+    expect(range).not.toBeNull();
+    if (!range) return;
+    // Ratio is the pixel index over 1.2M values, so the 2nd and 98th percentiles are
+    // predictable regardless of which subset was sampled.
+    expect(range.min).toBeGreaterThan(0);
+    expect(range.min).toBeLessThan(source.ratio.length * 0.05);
+    expect(range.max).toBeGreaterThan(source.ratio.length * 0.95);
+  });
+
+  it("does not sample a single column", () => {
+    // A stride equal to the row width would read one column of the bay and call it the
+    // whole stretch. The nudge in sampleStride is what stops that.
+    const source = grid(2, 1_000_000);
+    const range = waterRange(source);
+    expect(range).not.toBeNull();
+    if (!range) return;
+    // Both columns carry different values, so a one-column sample would halve the spread.
+    expect(range.max - range.min).toBeGreaterThan(source.ratio.length * 0.9);
+  });
+
+  it("still ignores land", () => {
+    const source = large();
+    source.sceneCount.fill(0);
+    expect(waterRange(source)).toBeNull();
+    expect(sceneCountRange(source)).toBeNull();
+  });
+
+  it("is exact below the threshold", () => {
+    const small = composite([1, 5, 9], [1, 1, 1]);
+    expect(waterRange(small)).toEqual({ min: 1, max: 9 });
   });
 });
