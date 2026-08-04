@@ -20,6 +20,7 @@ import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
 import type { Composite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { renderComposite, renderSceneCount, sceneCountRange, waterRange } from "./depth-ramp.js";
+import { resetDraw } from "./draw-lifecycle.js";
 import { useProject } from "./ProjectContext.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -304,8 +305,7 @@ function MapSurface() {
         if (target === "exclusion" || target === "inclusion") {
           // Zones are a list, not the one shape being reshaped, so terra-draw's copy
           // goes; the map renders them from state like the AOI outside edit mode.
-          draw.clear();
-          draw.stop();
+          resetDraw(draw);
           if (target === "exclusion") addExclusion(feature.geometry);
           else addInclusion(feature.geometry);
           return;
@@ -533,11 +533,7 @@ function MapSurface() {
 
   /** Hands the AOI back, drops terra-draw's copy, and returns to the plain outline. */
   function leaveEditing() {
-    const draw = drawRef.current;
-    if (draw) {
-      draw.clear();
-      draw.stop();
-    }
+    resetDraw(drawRef.current);
     editedFeatureRef.current = undefined;
     setIsEditing(false);
     setEditError(null);
@@ -556,10 +552,11 @@ function MapSurface() {
     },
     drawTarget,
     stopDraw: () => {
-      const draw = drawRef.current;
-      if (!draw || !isDrawing) return;
-      draw.clear();
-      draw.stop();
+      // Only a draw in progress, never a reshape: `leaveEditing` owns that teardown,
+      // and stopping terra-draw without clearing `isEditing` would leave the AOI
+      // hidden — the effect below empties its source while a reshape is live.
+      if (!isDrawing) return;
+      resetDraw(drawRef.current);
       setIsDrawing(false);
       setDrawTarget(null);
     },
