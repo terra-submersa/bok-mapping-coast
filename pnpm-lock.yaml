@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  geotiff@3.0.5:
+    hash: eiuhdq3n7er6obn5e344iz63ki
+    path: patches/geotiff@3.0.5.patch
+
 importers:
 
   .:
@@ -53,7 +58,7 @@ importers:
         version: link:../../packages/dji
       geotiff:
         specifier: ^3.0.5
-        version: 3.0.5
+        version: 3.0.5(patch_hash=eiuhdq3n7er6obn5e344iz63ki)
       maplibre-gl:
         specifier: ^6.1.0
         version: 6.1.0
@@ -2961,7 +2966,7 @@ snapshots:
     dependencies:
       rbush: 2.0.2
 
-  geotiff@3.0.5:
+  geotiff@3.0.5(patch_hash=eiuhdq3n7er6obn5e344iz63ki):
     dependencies:
       '@petamoriken/float16': 3.9.3
       lerc: 3.0.0

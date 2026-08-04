@@ -12,6 +12,13 @@ const KILADHA: BBox = [23.105, 37.418, 23.14, 37.435];
  */
 const TWO_TILES: BBox = [23.0, 37.4, 23.34, 37.4045];
 
+/**
+ * 4x300 px — narrow enough to hand-build byte by byte, tall enough that at one row per
+ * strip the strip table outgrows the slice geotiff reads eagerly. See issue #45 and
+ * `bigEndianTiffBytes`.
+ */
+const TALL: BBox = [23.105, 37.418, 23.1055, 37.445];
+
 const QUERY = { from: "2025-06-01", to: "2025-09-15" };
 
 /**
@@ -32,6 +39,92 @@ function tiffBytes(width: number, height: number, base: number): ArrayBuffer {
     SampleFormat: [3, 3],
     PhotometricInterpretation: 1,
   }) as ArrayBuffer;
+}
+
+/**
+ * A hand-rolled **big-endian** two-band FLOAT32 GeoTIFF, one row per strip, for issue #45.
+ *
+ * `writeArrayBuffer` cannot produce this fixture: it writes little-endian, and the bug
+ * only exists on the other byte order. Sentinel Hub returns big-endian ("MM"), and
+ * geotiff 3.0.5's `DeferredArray` reads lazily-loaded IFD arrays as little-endian
+ * unconditionally — so `StripOffsets` comes back byte-swapped and every strip is read
+ * from a nonsense offset. `patches/geotiff@3.0.5.patch` fixes it.
+ *
+ * An array is only deferred when it falls outside the 1024-byte slice already fetched at
+ * the IFD, which is why the failure appears abruptly at a height of roughly 1600 px on
+ * the real 8-rows-per-strip composites. Here one row per strip reaches the same state at
+ * a size a unit test can hold: `height` above ~250 pushes the array past the slice.
+ *
+ * Uncompressed on purpose. The real composites are deflate, where a wrong offset feeds
+ * pako non-deflate bytes and it throws the string "buffer error"; uncompressed, the same
+ * wrong offset yields the wrong *pixels*, which is the failure this asserts on directly.
+ */
+function bigEndianTiffBytes(width: number, height: number, base: number): ArrayBuffer {
+  const entries: Array<[tag: number, type: number, count: number, value: number | number[]]> = [];
+  const stripBytes = width * 2 * 4;
+  const headerBytes = 8;
+  const ifdBytes = 2 + 10 * 12 + 4;
+  const offsetsAt = headerBytes + ifdBytes;
+  const countsAt = offsetsAt + height * 4;
+  const pixelsAt = countsAt + height * 4;
+
+  const buffer = new ArrayBuffer(pixelsAt + height * stripBytes);
+  const view = new DataView(buffer);
+
+  view.setUint8(0, 0x4d); // "MM" — big-endian, the byte order the bug needs
+  view.setUint8(1, 0x4d);
+  view.setUint16(2, 42, false);
+  view.setUint32(4, headerBytes, false);
+
+  const SHORT = 3;
+  const LONG = 4;
+  entries.push([256, LONG, 1, width]); // ImageWidth
+  entries.push([257, LONG, 1, height]); // ImageLength
+  entries.push([258, SHORT, 2, [32, 32]]); // BitsPerSample
+  entries.push([259, SHORT, 1, 1]); // Compression: none
+  entries.push([262, SHORT, 1, 1]); // PhotometricInterpretation: black is zero
+  entries.push([273, LONG, height, offsetsAt]); // StripOffsets — the deferred array
+  entries.push([277, SHORT, 1, 2]); // SamplesPerPixel
+  entries.push([278, LONG, 1, 1]); // RowsPerStrip
+  entries.push([279, LONG, height, countsAt]); // StripByteCounts
+  entries.push([339, SHORT, 2, [3, 3]]); // SampleFormat: IEEE float
+
+  view.setUint16(headerBytes, entries.length, false);
+  entries.forEach(([tag, type, count, value], i) => {
+    const at = headerBytes + 2 + i * 12;
+    view.setUint16(at, tag, false);
+    view.setUint16(at + 2, type, false);
+    view.setUint32(at + 4, count, false);
+    // Values of four bytes or fewer live in the value field itself, left-justified, so a
+    // pair of SHORTs is two uint16s and a lone SHORT leaves the low half unused.
+    if (type === SHORT) {
+      const shorts = Array.isArray(value) ? value : [value];
+      shorts.forEach((v, k) => {
+        view.setUint16(at + 8 + k * 2, v, false);
+      });
+    } else {
+      view.setUint32(at + 8, value as number, false);
+    }
+  });
+  view.setUint32(headerBytes + 2 + entries.length * 12, 0, false); // no next IFD
+
+  for (let row = 0; row < height; row++) {
+    view.setUint32(offsetsAt + row * 4, pixelsAt + row * stripBytes, false);
+    view.setUint32(countsAt + row * 4, stripBytes, false);
+  }
+  for (let i = 0; i < width * height; i++) {
+    view.setFloat32(pixelsAt + i * 8, base + i, false);
+    view.setFloat32(pixelsAt + i * 8 + 4, 1, false);
+  }
+  return buffer;
+}
+
+/** A TIFF that claims deflate but carries junk, so the decoder fails the way #45 did. */
+function undecodableTiffBytes(width: number, height: number): ArrayBuffer {
+  const buffer = bigEndianTiffBytes(width, height, 0);
+  const view = new DataView(buffer);
+  view.setUint16(8 + 2 + 3 * 12 + 8, 8, false); // Compression: Adobe deflate
+  return buffer;
 }
 
 function tiffResponse(width: number, height: number, base: number, cached = false): Response {
@@ -210,6 +303,64 @@ describe("fetchTiledComposite — failure", () => {
   it("does not retry a 400", async () => {
     const fetchFn = stubFetch(() => errorResponse(400, "bad bbox"));
     await expect(fetchTiledComposite({ bbox: KILADHA, ...QUERY })).rejects.toThrow();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Issue #45. Big-endian with enough strips to push `StripOffsets` out of the slice
+   * geotiff reads eagerly — the exact shape every Sentinel Hub composite over ~1600 px
+   * tall has. Unpatched, geotiff byte-swaps every strip offset and the pixels are junk.
+   */
+  it("decodes a big-endian composite whose strip table is loaded lazily", async () => {
+    const { width, height } = planCompositeTiles(TALL);
+    expect(height).toBeGreaterThan(250);
+    stubFetch(
+      () =>
+        new Response(bigEndianTiffBytes(width, height, 0), {
+          status: 200,
+          headers: { "Content-Type": "image/tiff" },
+        }),
+    );
+
+    const composite = await fetchTiledComposite({ bbox: TALL, ...QUERY });
+
+    expect(composite.width).toBe(width);
+    expect(composite.height).toBe(height);
+    // The last rows are the ones whose offsets sit furthest into the deferred array.
+    expect(composite.ratio[0]).toBe(0);
+    expect(composite.ratio[width * (height - 1)]).toBe(width * (height - 1));
+    expect(composite.ratio.at(-1)).toBe(width * height - 1);
+    expect(composite.sceneCount.at(-1)).toBe(1);
+  });
+
+  /** pako throws a bare string, which loses name, message and stack. Wrap it. */
+  it("reports an undecodable GeoTIFF as an Error naming the tile", async () => {
+    stubFetch(
+      () =>
+        new Response(undecodableTiffBytes(4, 300), {
+          status: 200,
+          headers: { "Content-Type": "image/tiff" },
+        }),
+    );
+
+    const failure = await fetchTiledComposite({ bbox: KILADHA, ...QUERY }).catch((e) => e);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toMatch(/^The composite failed: the GeoTIFF could not be decoded \(/);
+  });
+
+  /** Same bytes, same failure — and on a cache miss each attempt is a metered request. */
+  it("does not retry a GeoTIFF that will not decode", async () => {
+    const fetchFn = stubFetch(
+      () =>
+        new Response(undecodableTiffBytes(4, 300), {
+          status: 200,
+          headers: { "Content-Type": "image/tiff" },
+        }),
+    );
+
+    await expect(fetchTiledComposite({ bbox: KILADHA, ...QUERY })).rejects.toThrow();
+
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 

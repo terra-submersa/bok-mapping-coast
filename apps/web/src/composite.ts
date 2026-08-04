@@ -48,6 +48,21 @@ export class CompositeRequestError extends Error {
   }
 }
 
+/**
+ * The bytes arrived but would not decode. Separate from `CompositeRequestError` because
+ * the two want opposite treatment: a request can be retried, whereas the same bytes
+ * decode to the same failure however many times you ask.
+ */
+export class CompositeDecodeError extends Error {
+  override readonly cause: unknown;
+
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = "CompositeDecodeError";
+    this.cause = cause;
+  }
+}
+
 export function compositeUrl({ bbox, from, to }: CompositeQuery, size?: OutputSize): string {
   const params = new URLSearchParams({ bbox: bbox.join(","), from, to });
   if (size) {
@@ -87,14 +102,31 @@ export async function fetchCompositeTile(
     );
   }
 
-  const tiff = await fromArrayBuffer(await res.arrayBuffer());
-  const image = await tiff.getImage();
-  const [ratio, sceneCount] = (await image.readRasters()) as unknown as Float32Array[];
-
   return {
-    raster: { width: image.getWidth(), height: image.getHeight(), ratio, sceneCount },
+    raster: await decodeTile(await res.arrayBuffer()),
     cached: res.headers.get("X-Composite-Cache") === "hit",
   };
+}
+
+/**
+ * Decodes one composite GeoTIFF, and guarantees that a failure arrives as an `Error`.
+ *
+ * That guarantee is the whole point of the wrapper. geotiff's deflate path re-throws
+ * whatever pako threw, and pako throws a bare **string** (`throw inflator.msg`), so
+ * `name`, `message` and `stack` are all undefined at the catch. Issue #45 surfaced in
+ * the panel as the two words "buffer error" and nothing else — no tile, no file, no
+ * hint that it was a decode rather than a download.
+ */
+async function decodeTile(bytes: ArrayBuffer): Promise<TileRaster> {
+  try {
+    const tiff = await fromArrayBuffer(bytes);
+    const image = await tiff.getImage();
+    const [ratio, sceneCount] = (await image.readRasters()) as unknown as Float32Array[];
+    return { width: image.getWidth(), height: image.getHeight(), ratio, sceneCount };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new CompositeDecodeError(`the GeoTIFF could not be decoded (${detail})`, error);
+  }
 }
 
 /**
@@ -106,6 +138,9 @@ export async function fetchCompositeTile(
  * retry budget is small and a permanent failure just fails twice more slowly.
  */
 function isWorthRetrying(error: unknown): boolean {
+  // Undecodable bytes are undecodable a second later too, and each attempt is a paid
+  // Processing API request on a cache miss.
+  if (error instanceof CompositeDecodeError) return false;
   if (error instanceof CompositeRequestError) {
     return error.status === undefined || error.status >= 500;
   }
