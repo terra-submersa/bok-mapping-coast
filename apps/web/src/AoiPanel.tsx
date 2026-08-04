@@ -1,4 +1,4 @@
-import type { Aoi, ProcessingApiLimitCheck } from "@bok/core";
+import type { Aoi, CompositeTilePlan } from "@bok/core";
 import { useState } from "react";
 import { CollapsibleSection } from "./CollapsibleSection.js";
 
@@ -8,7 +8,10 @@ interface AoiPanelProps {
   areaKm2: number | null;
   /** The rectangle that has to be fetched to cover it. */
   envelopeKm2: number | null;
-  limitCheck: ProcessingApiLimitCheck | null;
+  /** How the envelope will be fetched, or null when it cannot be. */
+  plan: CompositeTilePlan | null;
+  /** Why no plan is possible — currently only the memory ceiling. */
+  planError: string | null;
   isDrawing: boolean;
   isEditing: boolean;
   /** Set when a paste was accepted but not exactly as given — e.g. several polygons. */
@@ -25,7 +28,8 @@ export function AoiPanel({
   aoi,
   areaKm2,
   envelopeKm2,
-  limitCheck,
+  plan,
+  planError,
   isDrawing,
   isEditing,
   note,
@@ -97,14 +101,17 @@ export function AoiPanel({
           {envelopeKm2 !== null && (
             <div className="hint">Fetches a {envelopeKm2.toFixed(2)} km² box</div>
           )}
-          {limitCheck?.exceeds && (
-            <p className="error">
-              This AOI's bounding box exceeds the Processing API's single-request limit (
-              {Math.round(limitCheck.widthPx)}×{Math.round(limitCheck.heightPx)} px at Sentinel-2's
-              native 10 m resolution, cap is 2500×2500 px). Draw a smaller area — it is the box
-              around your shape that counts, not the shape itself.
-            </p>
+          {/* An envelope over the single-request cap is now fetched as several tiles
+              rather than refused (issue #41), so this is a cost note, not a warning —
+              each tile is its own metered Processing API request. */}
+          {plan && plan.tiles.length > 1 && (
+            <div className="hint">
+              {plan.width}×{plan.height} px, fetched as {plan.cols}×{plan.rows} ={" "}
+              {plan.tiles.length} tiles · ~{Math.round((plan.width * plan.height * 8) / 1e6)} MB ·{" "}
+              {plan.tiles.length} metered requests
+            </div>
           )}
+          {planError && <p className="error">{planError}</p>}
         </div>
       )}
     </CollapsibleSection>

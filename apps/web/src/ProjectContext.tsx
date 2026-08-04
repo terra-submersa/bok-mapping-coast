@@ -17,7 +17,7 @@ import {
   useState,
 } from "react";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
-import { type Composite, fetchComposite } from "./composite.js";
+import { type Composite, fetchTiledComposite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
@@ -362,7 +362,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setLoadingComposite(true);
     setCompositeError(null);
     try {
-      const next = await fetchComposite({ bbox: aoiEnvelope(current), from, to });
+      // Tiled when the envelope needs it, one plain request when it does not (issue #41).
+      const next = await fetchTiledComposite({ bbox: aoiEnvelope(current), from, to });
       const range = waterRange(next);
       if (!range) {
         setCompositeError("The composite has no water pixels — check the AOI and the date range.");

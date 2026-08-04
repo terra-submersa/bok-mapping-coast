@@ -29,6 +29,55 @@ describe("parseCompositeParams", () => {
     expect(result.error).toMatch(/2500x2500/);
   });
 
+  it("leaves a size-less request with no size keys at all", () => {
+    const result = parseCompositeParams(VALID);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Not merely undefined — absent, so the cache key stays byte-identical (issue #41).
+    expect(result.request).not.toHaveProperty("width");
+    expect(result.request).not.toHaveProperty("height");
+  });
+
+  it("accepts an explicit tile size", () => {
+    const result = parseCompositeParams({ ...VALID, width: "1250", height: "900" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request.width).toBe(1250);
+    expect(result.request.height).toBe(900);
+  });
+
+  /** The point of the whole change: an oversized box IS allowed, as a sized tile. */
+  it("accepts an oversized bbox when the size is explicit", () => {
+    const result = parseCompositeParams({
+      ...VALID,
+      bbox: "23.0,37.4,23.35,37.42",
+      width: "2500",
+      height: "220",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("still rejects an oversized bbox without a size, and says what to do", () => {
+    const result = parseCompositeParams({ ...VALID, bbox: "23.0,37.4,23.35,37.42" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/explicit width and height/i);
+  });
+
+  it("rejects a size over the cap, below one pixel, or not a whole number", () => {
+    expect(parseCompositeParams({ ...VALID, width: "2501", height: "10" }).ok).toBe(false);
+    expect(parseCompositeParams({ ...VALID, width: "10", height: "0" }).ok).toBe(false);
+    expect(parseCompositeParams({ ...VALID, width: "10.5", height: "10" }).ok).toBe(false);
+    expect(parseCompositeParams({ ...VALID, width: "wide", height: "10" }).ok).toBe(false);
+  });
+
+  it("refuses half a size rather than guessing the other side", () => {
+    const result = parseCompositeParams({ ...VALID, width: "1250" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/together/);
+  });
+
   it("rejects missing, malformed, or inverted dates", () => {
     expect(parseCompositeParams({ ...VALID, from: undefined }).ok).toBe(false);
     expect(parseCompositeParams({ ...VALID, to: "not-a-date" }).ok).toBe(false);

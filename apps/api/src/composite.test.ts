@@ -32,6 +32,29 @@ describe("compositeCacheKey", () => {
     expect(compositeCacheKey({ ...KILADHA, bbox: [23.1, 37.4, 23.2, 37.5] })).not.toBe(key);
     expect(compositeCacheKey({ ...KILADHA, to: "2025-09-16T00:00:00.000Z" })).not.toBe(key);
   });
+
+  /**
+   * Pinned literally, not derived. Adding the tile size to the key (issue #41) must not
+   * orphan the composites already on disk — this is the assertion that would have caught
+   * it, and re-deriving the expectation from the implementation would prove nothing.
+   *
+   * It changes legitimately when SDB_EVALSCRIPT_VERSION does. That is the point of the
+   * evalscript version, and re-pinning it then is correct.
+   */
+  it("is unchanged for a request without an explicit size", () => {
+    expect(compositeCacheKey(KILADHA)).toBe("73c06b383072b6d7bb57c9d097c5be8c");
+  });
+
+  it("distinguishes a sized request from an unsized one, and sizes from each other", () => {
+    const plain = compositeCacheKey(KILADHA);
+    const sized = compositeCacheKey({ ...KILADHA, width: 640, height: 480 });
+    expect(sized).not.toBe(plain);
+    expect(compositeCacheKey({ ...KILADHA, width: 641, height: 480 })).not.toBe(sized);
+  });
+
+  it("ignores a half-specified size, as outputSize does", () => {
+    expect(compositeCacheKey({ ...KILADHA, width: 640 })).toBe(compositeCacheKey(KILADHA));
+  });
 });
 
 describe("createCompositeCache", () => {

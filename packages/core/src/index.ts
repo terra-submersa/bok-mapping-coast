@@ -20,6 +20,17 @@ export {
   MIN_LANDMASS_AREA_M2,
 } from "./coastline.js";
 export {
+  type MergedComposite,
+  mergeCompositeTiles,
+  type TileRaster,
+} from "./composite-mosaic.js";
+export {
+  type CompositeTile,
+  type CompositeTilePlan,
+  MAX_COMPOSITE_PIXELS,
+  planCompositeTiles,
+} from "./composite-tiles.js";
+export {
   type ContourOptions,
   countVertices,
   gridToLonLat,

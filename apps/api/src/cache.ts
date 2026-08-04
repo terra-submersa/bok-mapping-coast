@@ -17,6 +17,13 @@ export function compositeCacheKey(request: CompositeRequest): string {
     from: request.from,
     to: request.to,
     evalscript: SDB_EVALSCRIPT_VERSION,
+    // Only when the caller dictated a size (issue #41). Folding `width: undefined` in
+    // unconditionally would be a no-op for JSON.stringify today, but writing it this way
+    // makes the intent explicit: a request without an explicit size must hash exactly as
+    // it did before tiling existed, or every composite already on disk is orphaned.
+    ...(request.width !== undefined && request.height !== undefined
+      ? { width: request.width, height: request.height }
+      : {}),
   });
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32);
 }

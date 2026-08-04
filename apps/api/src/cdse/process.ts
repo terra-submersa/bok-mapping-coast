@@ -9,12 +9,25 @@ export interface CompositeRequest {
   /** ISO instants bounding the scenes to composite. */
   from: string;
   to: string;
+  /**
+   * Exact output pixels, when the caller needs to dictate them rather than accept the
+   * native-resolution derivation. Set together or not at all.
+   *
+   * This exists for tiling (issue #41). A tiled client cuts the *pixel grid* and derives
+   * each tile's bbox from its pixel bounds, so it already knows the size each tile must
+   * be; letting `nativeOutputSize` re-derive it from the tile bbox would round
+   * independently per tile and hand back mosaics that are off by a pixel.
+   */
+  width?: number;
+  height?: number;
 }
 
 export interface OutputSize {
   width: number;
   height: number;
 }
+
+const clampSide = (px: number) => Math.max(1, Math.min(PROCESSING_API_MAX_SIDE_PX, Math.round(px)));
 
 /**
  * Output size at Sentinel-2's native 10 m, so we neither throw away resolution nor
@@ -23,8 +36,15 @@ export interface OutputSize {
  */
 export function nativeOutputSize(bbox: BBox): OutputSize {
   const { widthPx, heightPx } = checkProcessingApiLimit(bbox);
-  const clamp = (px: number) => Math.max(1, Math.min(PROCESSING_API_MAX_SIDE_PX, Math.round(px)));
-  return { width: clamp(widthPx), height: clamp(heightPx) };
+  return { width: clampSide(widthPx), height: clampSide(heightPx) };
+}
+
+/** The size to ask for: what the caller specified, or the native derivation. */
+export function outputSize(request: CompositeRequest): OutputSize {
+  if (request.width !== undefined && request.height !== undefined) {
+    return { width: clampSide(request.width), height: clampSide(request.height) };
+  }
+  return nativeOutputSize(request.bbox);
 }
 
 /**
@@ -76,7 +96,7 @@ export function createProcessClient(
   return {
     async fetchComposite(request) {
       const token = await tokens.getAccessToken();
-      const size = nativeOutputSize(request.bbox);
+      const size = outputSize(request);
 
       const res = await fetchFn(PROCESS_URL, {
         method: "POST",

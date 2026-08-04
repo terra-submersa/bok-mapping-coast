@@ -197,6 +197,64 @@ Then add direct vertex editing as a new story, on top of this, rather than unpic
 
 ---
 
+## D11 — An AOI over the single-request cap is tiled, not refused
+
+**Decided.** When an AOI envelope exceeds the Processing API's 2500×2500 px
+single-request limit, the web app cuts it into sub-requests, fetches them through the
+existing `/api/composite`, and stitches the returned rasters into one composite. The API
+gains an optional explicit output size and stays otherwise a byte proxy.
+
+**Why.** The cap limits a *request*, not the science. The evalscript is a per-pixel
+temporal median with `mosaicking: "ORBIT"`, so tiles carry no cross-tile state and a
+mosaic of nine is the same raster as one impossible request for all nine. Before this,
+anything larger than one bay was simply refused — the Argolic Gulf's northern basin
+alone is ~2600×2000 px, so the cap was a hard ceiling on the project's ambition rather
+than an incidental limit.
+
+**This is not a D2 violation, and the distinction is the point.** D2 forbids
+*downloading and processing Sentinel-2 tiles in Node* — fetching L2A products, decoding
+JP2, doing band math locally against GDAL bindings. What happens here is stitching
+two-band FLOAT32 rasters that the Processing API has already computed and returned, in
+the browser, with no new decoder and no product download. The evalscript still runs at
+Copernicus; nothing about D2's reasoning is weakened. Written down because the tiling
+code reads, at a glance, exactly like the thing D2 prohibits.
+
+**Why the web and not the API.** `apps/api` has no `geotiff` dependency and proxies
+opaque bytes; stitching there would need a TIFF *encoder*, plus a progress channel (SSE
+or polling) that exists nowhere in the codebase, and it would lose the per-tile disk
+cache that makes a re-fetch free. Tiling in the browser keeps each tile a normal,
+independently cached `/api/composite` request.
+
+**Consequences worth knowing.**
+
+- The **pixel grid is cut, not the bbox**. Slicing the bbox and letting each tile size
+  itself from `nativeOutputSize` rounds independently per tile and measures width along
+  each tile's own southern edge, so tiles in different rows differ by a pixel. Cutting
+  the pixel grid and deriving each tile's bbox from its pixel bounds makes the merge a
+  plain row-wise copy. This is consistent by construction with `gridToLonLat`, which
+  already reads the raster as a linear lon/lat grid with row 0 at the north.
+- A **one-tile plan sends exactly the request it always did**, without the size
+  parameters, so its bbox and cache key are byte-identical and every composite already
+  on disk stays reachable. Kiladha is untouched by all of this.
+- **A missing tile is not a hole, it is land.** `sceneCount === 0` is what `landMask`
+  reads as land (D-adjacent to #27), so a partial mosaic would grow a coastline in open
+  water and look entirely plausible. Tile failure is therefore all-or-nothing.
+- The ceiling moves from the API's cap to **browser memory**: two FLOAT32 bands are
+  8 bytes a pixel, so `MAX_COMPOSITE_PIXELS` (60 Mpx, ~480 MB) is the new refusal, and
+  the display path had to be decoupled from the analysis raster to survive it (#42).
+
+**Cost.** Nine tiles is nine metered requests, and a careless drag is expensive. The tile
+count and memory estimate are shown on the AOI panel before anything is fetched, which is
+mitigation rather than a fix. Seams remain the thing to watch: the maths says tiles abut
+exactly, but CDSE resamples per request, and a one-pixel discontinuity at a boundary
+would be its grid rather than ours.
+
+**Revisit if.** Seams turn out to be visible, in which case tiles overlap by a margin
+that is trimmed on merge. Or if the browser gives out well below 60 Mpx, in which case
+the ceiling drops and a downsampled analysis path becomes the real conversation.
+
+---
+
 ## Undecided
 
 - **Refraction convention.** Submerged features are displaced by n≈1.34. Does
