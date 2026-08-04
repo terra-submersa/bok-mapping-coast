@@ -1,5 +1,5 @@
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import type { Composite } from "./composite.js";
+import type { Composite, CompositeProgress } from "./composite.js";
 
 export type LayerView = "depth" | "sceneCount";
 
@@ -11,6 +11,7 @@ export interface DepthPanelProps {
   onToChange: (value: string) => void;
   onLoad: () => void;
   loading: boolean;
+  progress: CompositeProgress | null;
   error: string | null;
   composite: Composite | null;
   opacity: number;
@@ -60,6 +61,7 @@ export function DepthPanel({
   onToChange,
   onLoad,
   loading,
+  progress,
   error,
   composite,
   opacity,
@@ -69,8 +71,15 @@ export function DepthPanel({
 }: DepthPanelProps) {
   const stats = composite ? waterCoverage(composite) : null;
 
+  // The count goes in the title because `CollapsibleSection` unmounts its body when
+  // collapsed — open another section mid-load and the bar below vanishes, but the header
+  // is always mounted. Same idiom as ZonePanel's `${title} (${count})`.
+  const title = progress
+    ? `Relative depth (${progress.completed}/${progress.total})`
+    : "Relative depth";
+
   return (
-    <CollapsibleSection id="depth" title="Relative depth">
+    <CollapsibleSection id="depth" title={title}>
       <div className="row">
         <div className="field">
           <label htmlFor="from">From</label>
@@ -95,6 +104,29 @@ export function DepthPanel({
       <button type="button" onClick={onLoad} disabled={!hasAoi || loading} style={{ marginTop: 6 }}>
         {loading ? "Building composite…" : "Load composite"}
       </button>
+      {progress && (
+        <>
+          <div
+            className="progress"
+            role="progressbar"
+            aria-valuenow={progress.completed}
+            aria-valuemin={0}
+            aria-valuemax={progress.total}
+            aria-label="Composite tiles fetched"
+          >
+            <span
+              className="fill"
+              style={{ width: `${(progress.completed / progress.total) * 100}%` }}
+            />
+          </div>
+          <p className="hint" aria-live="polite">
+            {progress.completed} of {progress.total} {progress.total === 1 ? "tile" : "tiles"}
+            {/* Cache hits are why some tiles land instantly and others take half a
+                minute. Without this the bar looks like it is stalling. */}
+            {progress.cached > 0 && ` · ${progress.cached} from cache`}
+          </p>
+        </>
+      )}
       {!hasAoi && <p className="hint">Define an AOI first.</p>}
       {error && <p className="error">{error}</p>}
 

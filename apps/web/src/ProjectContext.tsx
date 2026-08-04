@@ -17,7 +17,7 @@ import {
   useState,
 } from "react";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
-import { type Composite, fetchTiledComposite } from "./composite.js";
+import { type Composite, type CompositeProgress, fetchTiledComposite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
@@ -85,6 +85,8 @@ export interface ProjectContextValue {
   composite: Composite | null;
   loadingComposite: boolean;
   compositeError: string | null;
+  /** Tiles done, while a load is running (issue #43). Null when nothing is in flight. */
+  compositeProgress: CompositeProgress | null;
   loadComposite: () => Promise<void>;
 
   /** How the raster is displayed. */
@@ -161,6 +163,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [composite, setComposite] = useState<Composite | null>(null);
   const [loadingComposite, setLoadingComposite] = useState(false);
   const [compositeError, setCompositeError] = useState<string | null>(null);
+  const [compositeProgress, setCompositeProgress] = useState<CompositeProgress | null>(null);
   const [opacity, setOpacity] = useState(0.8);
   const [layerView, setLayerView] = useState<LayerView>("depth");
   const [ratioRange, setRatioRange] = useState<{ min: number; max: number } | null>(null);
@@ -361,9 +364,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (!current) return;
     setLoadingComposite(true);
     setCompositeError(null);
+    setCompositeProgress(null);
     try {
       // Tiled when the envelope needs it, one plain request when it does not (issue #41).
-      const next = await fetchTiledComposite({ bbox: aoiEnvelope(current), from, to });
+      const next = await fetchTiledComposite(
+        { bbox: aoiEnvelope(current), from, to },
+        { onProgress: setCompositeProgress },
+      );
       const range = waterRange(next);
       if (!range) {
         setCompositeError("The composite has no water pixels — check the AOI and the date range.");
@@ -377,6 +384,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setCompositeError(err instanceof Error ? err.message : "Could not load the composite.");
     } finally {
       setLoadingComposite(false);
+      // Cleared however it ended. A bar left sitting at 7 of 9 beside an error message
+      // reads as "still going", which is the one thing it definitely is not.
+      setCompositeProgress(null);
     }
   }, [from, to]);
 
@@ -403,6 +413,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         composite,
         loadingComposite,
         compositeError,
+        compositeProgress,
         loadComposite,
         opacity,
         setOpacity,

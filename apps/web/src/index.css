@@ -256,6 +256,26 @@ body,
 }
 
 /*
+ * Tile-fetch progress (issue #43). Deliberately the same 2px-radius strip as
+ * `.ramp-legend .bar` so the panel keeps one visual vocabulary. Must stay above
+ * `.page` for the same reason the comment below says.
+ */
+.panel .progress {
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--panel-border);
+  overflow: hidden;
+}
+
+.panel .progress .fill {
+  display: block;
+  height: 100%;
+  background: var(--panel-accent);
+  transition: width 150ms linear;
+}
+
+/*
  * A full routed page, as opposed to the map's floating `.sidebar`. Reuses the
  * `.panel` look so the placeholder routes read as deliberate. Must stay below
  * the `.panel` rules it overrides — moving it up trips biome's

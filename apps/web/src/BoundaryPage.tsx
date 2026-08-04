@@ -26,6 +26,7 @@ export function BoundaryPage() {
     setTo,
     composite,
     loadingComposite,
+    compositeProgress,
     compositeError,
     loadComposite,
     opacity,
@@ -91,6 +92,7 @@ export function BoundaryPage() {
         onToChange={setTo}
         onLoad={loadComposite}
         loading={loadingComposite}
+        progress={compositeProgress}
         error={compositeError}
         composite={composite}
         opacity={opacity}

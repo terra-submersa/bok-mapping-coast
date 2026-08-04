@@ -170,6 +170,12 @@ export async function fetchTiledComposite(
     throw error;
   }
 
+  // Let the last tile's progress paint before the merge, which is a synchronous copy of
+  // the whole raster — several hundred milliseconds at nine tiles. Without the yield the
+  // final update, the merge and the caller's teardown all land in one React tick, so the
+  // bar freezes one tile short and reads as a stalled request rather than a busy merge.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
   return mergeCompositeTiles(
     plan,
     tiles.map((tile) => tile.raster),
