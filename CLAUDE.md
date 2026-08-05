@@ -173,6 +173,17 @@ that the pilot types into Pilot 2 by hand.
   Never send the polygon to the Processing API as `bounds.geometry`: masked pixels
   come back as no-data, `landMask` reads them as land, and a spurious coastal
   ribbon grows along the AOI edge.
+- **geotiff is patched, and the patch is load-bearing.** Sentinel Hub returns
+  big-endian (`MM`) GeoTIFFs. geotiff 3.0.5 reads lazily-loaded IFD arrays as
+  little-endian unconditionally, so `StripOffsets` comes back byte-swapped and every
+  strip is read from a nonsense offset — any composite over roughly 1600 px tall
+  fails to decode (issue #45). `patches/geotiff@3.0.5.patch` passes the file's
+  declared byte order through, in `src`, `dist-module` and `dist-node`;
+  `dist-browser` is left alone on purpose, because it is a 550 kB minified bundle
+  and Vite resolves the `import` condition anyway. Still unfixed upstream as of
+  3.1.0-beta.0. **Bumping geotiff means re-checking both `DeferredArray` call sites**
+  — `pnpm install` will fail loudly if the patch no longer applies, but a patch that
+  still applies to moved code would not. Tall composites are the canary.
 
 ## Working agreements
 
