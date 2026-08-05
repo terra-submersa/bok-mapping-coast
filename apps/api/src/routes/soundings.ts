@@ -1,4 +1,10 @@
-import { parseBboxInput, parseSounding, parseSoundings } from "@bok/core";
+import {
+  formatSoundingCsv,
+  parseBboxInput,
+  parseSounding,
+  parseSoundingCsv,
+  parseSoundings,
+} from "@bok/core";
 import { Hono } from "hono";
 import type { SoundingStore } from "../soundings/store.js";
 
@@ -24,6 +30,20 @@ export function createSoundingRoutes(store: () => SoundingStore) {
     }
   });
 
+  /**
+   * GET /api/soundings.csv — the whole table, as a file (issue #48).
+   *
+   * The database is the source of truth, which makes this the backup path, so it emits
+   * every field rather than the four a Garmin export happens to carry. Registered before
+   * `/soundings/:id` reads it as an id — it does not, since that route needs a slash, but
+   * the ordering costs nothing and the failure would be baffling.
+   */
+  app.get("/soundings.csv", (c) => {
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", 'attachment; filename="soundings.csv"');
+    return c.body(formatSoundingCsv(store().list()));
+  });
+
   app.get("/soundings/:id", (c) => {
     const sounding = store().get(c.req.param("id"));
     if (!sounding) return c.json({ error: "No such sounding." }, 404);
@@ -31,19 +51,29 @@ export function createSoundingRoutes(store: () => SoundingStore) {
   });
 
   /**
-   * POST /api/soundings — bulk upsert of a JSON array.
+   * POST /api/soundings — bulk upsert of a JSON array, or of a CSV body (issue #48).
    *
    * Upsert rather than insert, keyed on an id derived from the name, so re-importing the
    * same survey corrects it instead of doubling it. All-or-nothing: a bad row rejects the
    * batch rather than leaving half a survey in the table for someone to reconcile later.
+   *
+   * CSV is accepted directly because that is the shape the data actually has — waypoints
+   * exported from a Garmin with the depths typed in beside them. Making the browser or
+   * the import script translate it first would just move the parser somewhere with less
+   * test coverage.
    */
   app.post("/soundings", async (c) => {
+    const isCsv = (c.req.header("Content-Type") ?? "").includes("csv");
     let soundings: ReturnType<typeof parseSoundings>;
     try {
-      const body = await c.req.json();
-      soundings = parseSoundings(
-        Array.isArray(body) ? body : (body as { soundings?: unknown }).soundings,
-      );
+      if (isCsv) {
+        soundings = parseSoundingCsv(await c.req.text());
+      } else {
+        const body = await c.req.json();
+        soundings = parseSoundings(
+          Array.isArray(body) ? body : (body as { soundings?: unknown }).soundings,
+        );
+      }
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "Malformed soundings." }, 400);
     }

@@ -105,4 +105,62 @@ describe("sounding routes", () => {
     expect((await app.request("/soundings/bathy-0001", { method: "DELETE" })).status).toBe(204);
     expect((await app.request("/soundings/bathy-0001", { method: "DELETE" })).status).toBe(404);
   });
+
+  describe("CSV (issue #48)", () => {
+    function postCsv(csv: string) {
+      return app.request("/soundings", {
+        method: "POST",
+        headers: { "Content-Type": "text/csv" },
+        body: csv,
+      });
+    }
+
+    it("imports a CSV body directly, in the shape a Garmin export has", async () => {
+      const res = await postCsv("name,lon,lat,depth\nBathy 0001,23.152,37.3157,0.6");
+      expect(res.status).toBe(200);
+
+      const { soundings } = await json<{ soundings: Sounding[] }>(await app.request("/soundings"));
+      expect(soundings[0].depthM).toBe(0.6);
+    });
+
+    it("400s on a bad CSV row and names the line", async () => {
+      const res = await postCsv("name,lon,lat,depth\nBathy 0001,23.152,37.3157,-4");
+      expect(res.status).toBe(400);
+      expect((await json<{ error: string }>(res)).error).toMatch(/Line 2:/);
+    });
+
+    it("exports as a file, which is the backup path the DB depends on", async () => {
+      await post([KILADHA, NORTH]);
+      const res = await app.request("/soundings.csv");
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/csv");
+      expect(res.headers.get("Content-Disposition")).toContain("soundings.csv");
+      expect(await res.text()).toContain("Bathy 0001");
+    });
+
+    it("round-trips: export, wipe, re-import, same rows", async () => {
+      await post([KILADHA, NORTH]);
+      const exported = await (await app.request("/soundings.csv")).text();
+
+      store.remove("bathy-0001");
+      store.remove("bathy-0015");
+      expect(store.list()).toEqual([]);
+
+      expect((await postCsv(exported)).status).toBe(200);
+      const { soundings } = await json<{ soundings: Sounding[] }>(await app.request("/soundings"));
+      // Including the timestamps — an export that dropped them would silently lose the
+      // one thing that keeps a tide correction possible (D13).
+      expect(soundings).toEqual([
+        expect.objectContaining({ id: "bathy-0001", measuredAt: KILADHA.measuredAt }),
+        expect.objectContaining({ id: "bathy-0015", measuredAt: NORTH.measuredAt }),
+      ]);
+    });
+
+    it("exports a header alone when there is nothing stored", async () => {
+      expect((await (await app.request("/soundings.csv")).text()).trim()).toBe(
+        "id,name,lon,lat,depth,measured_at,source,note",
+      );
+    });
+  });
 });

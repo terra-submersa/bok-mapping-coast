@@ -70,5 +70,6 @@ export {
   type Sounding,
   type SoundingInput,
 } from "./sounding.js";
+export { formatSoundingCsv, parseSoundingCsv } from "./sounding-csv.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
 export { addZones, subtractZones } from "./zones.js";
