@@ -144,6 +144,16 @@ export interface ProjectContextValue {
   removeSounding: (id: string) => Promise<void>;
   importSoundings: (csv: string) => Promise<void>;
 
+  /**
+   * Soundings the Planner has kept out of the fit (issue #12; persisted in #13).
+   *
+   * The exclusion, not the sounding, is the project's business: fourteen readings across
+   * two sites 12 km apart with different clarity may fit worse as one model than as two,
+   * and deciding that is a judgement about *this* survey area.
+   */
+  excludedSoundingIds: string[];
+  toggleSoundingExcluded: (id: string) => void;
+
   /** Which contour ring is the flight area (story 4.1). */
   selectedAnchor: GeoJSON.Position | null;
   setSelectedAnchor: (anchor: GeoJSON.Position | null) => void;
@@ -215,6 +225,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const [soundings, setSoundings] = useState<Sounding[]>([]);
   const [soundingError, setSoundingError] = useState<string | null>(null);
+  const [excludedSoundingIds, setExcludedSoundingIds] = useState<string[]>([]);
 
   useEffect(() => storeExclusions(exclusions), [exclusions]);
   useEffect(() => storeInclusions(inclusions), [inclusions]);
@@ -428,6 +439,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     [refreshSoundings],
   );
 
+  const toggleSoundingExcluded = useCallback((id: string) => {
+    setExcludedSoundingIds((current) =>
+      current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+    );
+  }, []);
+
   // One listing at mount. A missing or unreachable API leaves `projectError` set and
   // everything else working — the draft is in localStorage, so planning is possible
   // without the project store.
@@ -529,6 +546,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         addSounding,
         removeSounding,
         importSoundings,
+        excludedSoundingIds,
+        toggleSoundingExcluded,
         selectedAnchor,
         setSelectedAnchor,
         allRingsSelected,

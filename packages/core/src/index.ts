@@ -42,6 +42,15 @@ export {
   type RatioGrid,
   shallowWaterContour,
 } from "./contour.js";
+export {
+  type DepthFit,
+  depthToRatio,
+  type FitPoint,
+  fitDepth,
+  MIN_CALIBRATION_POINTS,
+  ratioToDepth,
+  residuals,
+} from "./depth-fit.js";
 export { unionPolygons } from "./merge.js";
 export { interiorRings, type Polygonal, toMultiPolygon } from "./polygonal.js";
 export {
@@ -63,6 +72,7 @@ export {
   findRingContaining,
   MIN_RING_AREA_M2,
 } from "./rings.js";
+export { lonLatToGrid, type RatioSample, sampleRatio } from "./sample.js";
 export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
 export {
   parseSounding,

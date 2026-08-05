@@ -18,6 +18,7 @@ import { Outlet } from "react-router";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
+import { CalibrationProvider } from "./CalibrationContext.js";
 import type { Composite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
 import { renderComposite, renderSceneCount, sceneCountRange, waterRange } from "./depth-ramp.js";
@@ -119,12 +120,21 @@ function zonesFeatureCollection(
  */
 function soundingsFeatureCollection(
   soundings: readonly Sounding[],
-): GeoJSON.FeatureCollection<GeoJSON.Point, { label: string; depthM: number }> {
+  excludedIds: readonly string[] = [],
+): GeoJSON.FeatureCollection<GeoJSON.Point, { label: string; depthM: number; excluded: boolean }> {
+  const excluded = new Set(excludedIds);
   return {
     type: "FeatureCollection",
     features: soundings.map((sounding) => ({
       type: "Feature",
-      properties: { label: `${sounding.depthM} m`, depthM: sounding.depthM },
+      properties: {
+        label: `${sounding.depthM} m`,
+        depthM: sounding.depthM,
+        // Greyed rather than hidden: a point left out of the fit is still a measurement,
+        // and seeing where the excluded ones are is how you notice you have quietly
+        // dropped one whole cluster (issue #12).
+        excluded: excluded.has(sounding.id),
+      },
       geometry: { type: "Point", coordinates: [sounding.lon, sounding.lat] },
     })),
   };
@@ -152,6 +162,19 @@ export interface MapContextValue {
   stopEdit: () => void;
   /** Why the last gesture was refused, e.g. deleting the third-from-last corner. */
   editError: string | null;
+
+  /**
+   * Dropping a known-depth reference point (issue #12). Deliberately not a terra-draw
+   * mode: this is one click producing one position, not a polygon, and terra-draw's
+   * point mode would put a feature in its own store that then has to be reconciled with
+   * the soundings the API owns.
+   */
+  isDroppingSounding: boolean;
+  startDropSounding: () => void;
+  stopDropSounding: () => void;
+  /** Where the last drop landed, awaiting a depth. Cleared by the panel once saved. */
+  droppedPoint: { lon: number; lat: number } | null;
+  clearDroppedPoint: () => void;
 }
 
 const MapContext = createContext<MapContextValue | null>(null);
@@ -174,7 +197,9 @@ export function useMapControls(): MapContextValue {
 export function MapLayout() {
   return (
     <BoundaryProvider>
-      <MapSurface />
+      <CalibrationProvider>
+        <MapSurface />
+      </CalibrationProvider>
     </BoundaryProvider>
   );
 }
@@ -187,6 +212,8 @@ function MapSurface() {
   const [isEditing, setIsEditing] = useState(false);
   const [drawTarget, setDrawTarget] = useState<DrawTarget | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [isDroppingSounding, setIsDroppingSounding] = useState(false);
+  const [droppedPoint, setDroppedPoint] = useState<{ lon: number; lat: number } | null>(null);
 
   const {
     aoi,
@@ -204,6 +231,7 @@ function MapSurface() {
     inclusions,
     addInclusion,
     soundings,
+    excludedSoundingIds,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
 
@@ -215,6 +243,10 @@ function MapSurface() {
   /** terra-draw's id for the AOI while it is being reshaped. */
   const editedFeatureRef = useRef<string | number | undefined>(undefined);
   const drawTargetRef = useRef<DrawTarget | null>(drawTarget);
+  const isDroppingSoundingRef = useRef(isDroppingSounding);
+  useEffect(() => {
+    isDroppingSoundingRef.current = isDroppingSounding;
+  }, [isDroppingSounding]);
   useEffect(() => {
     isDrawingRef.current = isDrawing;
   }, [isDrawing]);
@@ -465,9 +497,10 @@ function MapSurface() {
         source: SOUNDINGS_SOURCE_ID,
         paint: {
           "circle-radius": 5,
-          "circle-color": "#ffffff",
+          "circle-color": ["case", ["get", "excluded"], "#78909c", "#ffffff"],
           "circle-stroke-color": "#37474f",
           "circle-stroke-width": 2,
+          "circle-opacity": ["case", ["get", "excluded"], 0.5, 1],
         },
       });
       map.addLayer({
@@ -497,13 +530,28 @@ function MapSurface() {
         map.getCanvas().style.cursor = "";
       });
       map.on("click", "rings-fill", (e) => {
-        if (isDrawingRef.current) return;
+        // A click meant to place a reference point must not also reselect a ring under it.
+        if (isDrawingRef.current || isDroppingSoundingRef.current) return;
         const point: GeoJSON.Position = [e.lngLat.lng, e.lngLat.lat];
         const match = findRingContaining(ringsRef.current, point);
         if (match) {
           setAllRingsSelected(false);
           setSelectedAnchor(match.anchor);
         }
+      });
+
+      /**
+       * Click anywhere to place a known-depth reference point (issue #12).
+       *
+       * The click yields a position and nothing else; the depth is typed into the
+       * Calibrate panel, which is also where the point is named and saved. Splitting it
+       * that way keeps the map free of a form and means an accidental click costs one
+       * "Cancel" rather than a row in the database.
+       */
+      map.on("click", (e) => {
+        if (!isDroppingSoundingRef.current) return;
+        setDroppedPoint({ lon: e.lngLat.lng, lat: e.lngLat.lat });
+        setIsDroppingSounding(false);
       });
 
       /**
@@ -583,8 +631,15 @@ function MapSurface() {
   useEffect(() => {
     if (!overlaysReady) return;
     const source = mapRef.current?.getSource(SOUNDINGS_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(soundingsFeatureCollection(soundings));
-  }, [overlaysReady, soundings]);
+    source?.setData(soundingsFeatureCollection(soundings, excludedSoundingIds));
+  }, [overlaysReady, soundings, excludedSoundingIds]);
+
+  // A crosshair while the next click will place a reference point. Without it the mode
+  // is invisible on the map and only the sidebar button says anything is armed.
+  useEffect(() => {
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = isDroppingSounding ? "crosshair" : "";
+  }, [isDroppingSounding]);
 
   // Dropping the composite has to take its layer with it, or a stale depth ramp stays
   // painted over an AOI it no longer belongs to — the bug issue #2's closing note is about.
@@ -656,6 +711,19 @@ function MapSurface() {
     },
     stopEdit: leaveEditing,
     editError,
+    isDroppingSounding,
+    startDropSounding: () => {
+      // Both other gestures own the next click, so neither may be live alongside this.
+      resetDraw(drawRef.current);
+      setIsDrawing(false);
+      setDrawTarget(null);
+      leaveEditing();
+      setDroppedPoint(null);
+      setIsDroppingSounding(true);
+    },
+    stopDropSounding: () => setIsDroppingSounding(false),
+    droppedPoint,
+    clearDroppedPoint: () => setDroppedPoint(null),
   };
 
   return (
