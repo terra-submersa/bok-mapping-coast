@@ -255,6 +255,67 @@ the ceiling drops and a downsampled analysis path becomes the real conversation.
 
 ---
 
+## D12 — The composite follows the polygon, as strips, not the envelope
+
+**Decided.** The composite is planned from the AOI *polygon*: the envelope is cut into
+horizontal strips 512 px tall, and within each strip only the column runs the polygon
+occupies are requested. `planCompositeCoverage` supersedes `planCompositeTiles` as the
+planner the app calls; the latter remains as the envelope plan and the fallback.
+
+**Why.** The Processing API is metered by output pixels, and the AOIs this project draws
+are diagonal coastal bands. On the first real one — 38×18 km, 285 km² of water — the
+envelope was 675 km², so **58% of every composite was open sea and hillside nobody will
+fly over**. That is not a rounding error on a metered service.
+
+**Why strips rather than a finer grid.** Both were measured on that AOI. Within one strip
+of a diagonal band the occupied columns are a single narrow run, so a strip is nearly as
+tight as a grid an eighth of its height and costs a fraction of the requests:
+
+| plan | requests | pixels fetched |
+|---|---|---|
+| envelope (D11) | 2 | 6.75 Mpx — 100% |
+| uniform 512 px grid | 32 | 5.06 Mpx — 75% |
+| uniform 128 px grid | 420 | 3.69 Mpx — 55% |
+| **strips, 512 px** | **7** | **4.35 Mpx — 64%** |
+| strips, 128 px | 18 | 3.56 Mpx — 53% |
+
+512 px is the chosen strip height: a third off the bill for five more requests. Shorter
+strips buy little more, because the floor for anything built from rectangles is the
+polygon's own fill fraction — 42% here.
+
+**The polygon still never reaches the API.** Every request is an axis-aligned box, exactly
+as before. Sending the geometry as `bounds.geometry` remains forbidden: masked pixels come
+back as no-data, `landMask` reads them as land, and a spurious coastal ribbon grows along
+the AOI edge. This asks for fewer boxes, not for a different kind of request.
+
+**Consequences worth knowing.**
+
+- **Unfetched ground is land, so the strips carry a 200 m margin.** `sceneCount === 0` is
+  what `landMask` reads as land (see D11), so the staircase edge between fetched and
+  unfetched is a fake coastline and `coastalRibbon` grows a band inward from it — issue
+  #32 arriving by a new road. Strips are selected against the AOI buffered by 200 m, which
+  is beyond the coast slider's 100 m maximum, so no such band survives the clip to the AOI.
+  **The margin and that slider maximum are coupled**; a test in `composite-tiles.test.ts`
+  asserts the property rather than the constant.
+- **A plan that saves little falls back to the envelope plan.** Below 15% saving the extra
+  requests are not worth it, and for an AOI that fits in one request the fallback is what
+  keeps its cache key — and so every composite already on disk — intact. A rectangle AOI
+  is bit-for-bit unchanged.
+- **Reshaping the AOI inside its envelope is no longer always free.** The grid is
+  unchanged and cached strips still hit, but a new shape can reach ground no strip covered,
+  and that is a fetch. Cheaper than the old behaviour on balance, but no longer zero.
+- The merged raster is still the full envelope. The memory ceiling, the pixel grid and
+  `gridToLonLat` are untouched; uncovered pixels simply keep the `Float32Array`'s zero.
+
+**Cost.** Composites cached under an envelope plan for an AOI that now plans as strips are
+dead — different bboxes, different keys. A one-off re-fetch, paid once.
+
+**Revisit if.** Requests turn out to be the expensive axis rather than pixels — CDSE rate
+limits, or per-request latency dominating on a slow link — in which case the strip height
+goes up and the saving goes down. It is one constant, `COMPOSITE_STRIP_PX`.
+
+---
+
 ## Undecided
 
 - **Refraction convention.** Submerged features are displaced by n≈1.34. Does

@@ -25,9 +25,14 @@ export {
   type TileRaster,
 } from "./composite-mosaic.js";
 export {
+  COMPOSITE_STRIP_PX,
+  COVERAGE_MARGIN_M,
   type CompositeTile,
   type CompositeTilePlan,
+  type CoveragePlanOptions,
   MAX_COMPOSITE_PIXELS,
+  MIN_COVERAGE_SAVING,
+  planCompositeCoverage,
   planCompositeTiles,
 } from "./composite-tiles.js";
 export {

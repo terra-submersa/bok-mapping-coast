@@ -94,21 +94,22 @@ export function AoiPanel({
           <div>
             Area: {areaKm2.toFixed(2)} km² · {vertexCount} vertices
           </div>
-          {/* The envelope is what actually gets requested and billed, and for anything
-              but a rectangle it is the larger of the two — and the only one the cap
-              applies to. Showing it is what keeps the warning below from reading as a
-              bug when a small diagonal AOI trips it. */}
+          {/* The envelope still bounds the merged raster and is what the memory ceiling
+              and the pixel grid are measured against, so it stays on screen — but since
+              issue #46 it is no longer what gets billed, and saying so is the difference
+              between a cost the Planner can act on and a number that looks like waste. */}
           {envelopeKm2 !== null && (
-            <div className="hint">Fetches a {envelopeKm2.toFixed(2)} km² box</div>
+            <div className="hint">Spans a {envelopeKm2.toFixed(2)} km² box</div>
           )}
-          {/* An envelope over the single-request cap is now fetched as several tiles
-              rather than refused (issue #41), so this is a cost note, not a warning —
-              each tile is its own metered Processing API request. */}
-          {plan && plan.tiles.length > 1 && (
+          {/* A cost note, not a warning: an envelope over the single-request cap is tiled
+              rather than refused (issue #41), and a diagonal one is fetched as strips that
+              skip the open sea (issue #46). Each is its own metered request. */}
+          {plan && (
             <div className="hint">
-              {plan.width}×{plan.height} px, fetched as {plan.cols}×{plan.rows} ={" "}
-              {plan.tiles.length} tiles · ~{Math.round((plan.width * plan.height * 8) / 1e6)} MB ·{" "}
-              {plan.tiles.length} metered requests
+              {plan.width}×{plan.height} px · {plan.tiles.length} metered{" "}
+              {plan.tiles.length === 1 ? "request" : "requests"}, fetching{" "}
+              {Math.round((100 * plan.coveredPx) / (plan.width * plan.height))}% of it · ~
+              {Math.round((plan.coveredPx * 8) / 1e6)} MB
             </div>
           )}
           {planError && <p className="error">{planError}</p>}

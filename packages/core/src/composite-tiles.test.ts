@@ -1,8 +1,12 @@
+import { booleanPointInPolygon, buffer as turfBuffer } from "@turf/turf";
 import { describe, expect, it } from "vitest";
+import { type Aoi, aoiEnvelope, rectangleAoi } from "./aoi.js";
 import type { BBox } from "./bbox.js";
 import {
+  COVERAGE_MARGIN_M,
   type CompositeTilePlan,
   MAX_COMPOSITE_PIXELS,
+  planCompositeCoverage,
   planCompositeTiles,
 } from "./composite-tiles.js";
 import { checkProcessingApiLimit, PROCESSING_API_MAX_SIDE_PX } from "./processing-limit.js";
@@ -136,6 +140,161 @@ describe("planCompositeTiles", () => {
 
   it("keeps the ceiling above a full 3x3 of maximal tiles", () => {
     expect(MAX_COMPOSITE_PIXELS).toBeGreaterThanOrEqual((PROCESSING_API_MAX_SIDE_PX * 3) ** 2);
+  });
+});
+
+/**
+ * A diagonal coastal band, roughly 18 x 11 km — the shape this project actually draws,
+ * and the one whose envelope is mostly water nobody will fly over.
+ */
+const DIAGONAL: Aoi = {
+  type: "Polygon",
+  coordinates: [
+    [
+      [23.0, 37.4],
+      [23.05, 37.4],
+      [23.2, 37.5],
+      [23.15, 37.5],
+      [23.0, 37.4],
+    ],
+  ],
+};
+
+/** Whether any tile's bbox contains the point. */
+function isCovered(plan: CompositeTilePlan, [lon, lat]: GeoJSON.Position): boolean {
+  return plan.tiles.some(
+    ({ bbox }) => lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3],
+  );
+}
+
+describe("planCompositeCoverage", () => {
+  /**
+   * The property that keeps `.cache/composites` alive. A rectangle saves nothing by being
+   * cut into strips, so it must come back as the plan it has always had — same tiles, same
+   * floats, same cache key — rather than as a coverage plan that happens to look similar.
+   */
+  it("falls back to the plain envelope plan for a rectangle", () => {
+    expect(planCompositeCoverage(rectangleAoi(KILADHA))).toEqual(planCompositeTiles(KILADHA));
+    expect(planCompositeCoverage(rectangleAoi(BIG))).toEqual(planCompositeTiles(BIG));
+  });
+
+  it("fetches materially less than the envelope for a diagonal AOI", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    const envelopePx = plan.width * plan.height;
+    expect(plan.coveredPx).toBeLessThan(0.85 * envelopePx);
+    expect(plan.tiles.reduce((sum, t) => sum + t.width * t.height, 0)).toBe(plan.coveredPx);
+  });
+
+  it("still spans the whole envelope, which is what the merged grid measures", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    expect(plan.bbox).toEqual(aoiEnvelope(DIAGONAL));
+    expect(plan.width * plan.height).toBeGreaterThan(plan.coveredPx);
+  });
+
+  it("keeps every tile inside the cap and inside the grid", () => {
+    for (const tile of planCompositeCoverage(DIAGONAL).tiles) {
+      expect(tile.width).toBeGreaterThan(0);
+      expect(tile.height).toBeGreaterThan(0);
+      expect(tile.width).toBeLessThanOrEqual(PROCESSING_API_MAX_SIDE_PX);
+      expect(tile.height).toBeLessThanOrEqual(PROCESSING_API_MAX_SIDE_PX);
+    }
+  });
+
+  /** Overlap would bill twice and, worse, let one strip overwrite another's pixels. */
+  it("lands on the parent pixel grid without overlapping", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    const covered = new Uint8Array(plan.width * plan.height);
+    for (const tile of plan.tiles) {
+      expect(tile.x + tile.width).toBeLessThanOrEqual(plan.width);
+      expect(tile.y + tile.height).toBeLessThanOrEqual(plan.height);
+      for (let row = 0; row < tile.height; row++) {
+        for (let col = 0; col < tile.width; col++) {
+          covered[(tile.y + row) * plan.width + (tile.x + col)] += 1;
+        }
+      }
+    }
+    expect(covered.every((n) => n <= 1)).toBe(true);
+    expect(covered.reduce((sum: number, n) => sum + n, 0)).toBe(plan.coveredPx);
+  });
+
+  it("pins a tile on the grid's edge to the envelope's own coordinates", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    const [minLon, minLat, maxLon, maxLat] = plan.bbox;
+    for (const tile of plan.tiles) {
+      if (tile.x === 0) expect(tile.bbox[0]).toBe(minLon);
+      if (tile.x + tile.width === plan.width) expect(tile.bbox[2]).toBe(maxLon);
+      if (tile.y === 0) expect(tile.bbox[3]).toBe(maxLat);
+      if (tile.y + tile.height === plan.height) expect(tile.bbox[1]).toBe(minLat);
+    }
+  });
+
+  it("orders strips north first, matching the merged grid's rows", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    for (let i = 1; i < plan.tiles.length; i++) {
+      expect(plan.tiles[i].y).toBeGreaterThanOrEqual(plan.tiles[i - 1].y);
+    }
+  });
+
+  /**
+   * The guard that keeps issue #32 from coming back by a new road.
+   *
+   * Ground no strip covers arrives as `sceneCount = 0`, which `landMask` reads as land, so
+   * the edge between fetched and unfetched is a fake coastline that `coastalRibbon` will
+   * grow a band inward from. The band reaches at most the coast slider's maximum — 100 m,
+   * in `ThresholdPanel` — so as long as every uncovered pixel inside the envelope is
+   * further than that from the AOI, no part of that band can survive the clip to the AOI.
+   *
+   * Asserted at 100 m rather than at `COVERAGE_MARGIN_M`, deliberately: this is the
+   * property that matters, and it must keep holding if the margin is ever retuned. Raise
+   * the slider's maximum past this and the test should be the thing that fails.
+   */
+  it("covers everything within reach of the coastal ribbon", () => {
+    const plan = planCompositeCoverage(DIAGONAL);
+    const reach = turfBuffer(DIAGONAL, 100, { units: "meters" });
+    if (!reach) throw new Error("buffer failed");
+
+    // Sampled over the envelope rather than off the buffer's own ring: buffering puts
+    // vertices only at the polygon's corners, which are precisely the envelope's extremes,
+    // so a ring sample tests the one place this cannot speak for.
+    const [minLon, minLat, maxLon, maxLat] = plan.bbox;
+    const missed: GeoJSON.Position[] = [];
+    let tested = 0;
+    for (let i = 1; i < 120; i++) {
+      for (let j = 1; j < 80; j++) {
+        const point: GeoJSON.Position = [
+          minLon + (i / 120) * (maxLon - minLon),
+          minLat + (j / 80) * (maxLat - minLat),
+        ];
+        if (!booleanPointInPolygon(point, reach)) continue;
+        tested++;
+        if (!isCovered(plan, point)) missed.push(point);
+      }
+    }
+
+    expect(tested).toBeGreaterThan(100);
+    expect(missed).toEqual([]);
+  });
+
+  it("gives the margin room over the coast slider's maximum", () => {
+    expect(COVERAGE_MARGIN_M).toBeGreaterThan(100);
+  });
+
+  /** Shorter strips hug the polygon more tightly, and cost more requests for it. */
+  it("trades requests against pixels as the strip height falls", () => {
+    const wide = planCompositeCoverage(DIAGONAL, { stripPx: 512 });
+    const narrow = planCompositeCoverage(DIAGONAL, { stripPx: 128 });
+    expect(narrow.coveredPx).toBeLessThan(wide.coveredPx);
+    expect(narrow.tiles.length).toBeGreaterThan(wide.tiles.length);
+  });
+
+  it("splits a strip that is wider than one request allows", () => {
+    const plan = planCompositeCoverage(DIAGONAL, { maxSidePx: 200 });
+    expect(plan.tiles.length).toBeGreaterThan(0);
+    expect(plan.tiles.every((t) => t.width <= 200 && t.height <= 200)).toBe(true);
+  });
+
+  it("still refuses an AOI over the memory ceiling", () => {
+    expect(() => planCompositeCoverage(rectangleAoi([20, 35, 31, 43]))).toThrow(/ceiling/);
   });
 });
 

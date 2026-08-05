@@ -1,4 +1,4 @@
-import { type BBox, planCompositeTiles } from "@bok/core";
+import { type BBox, planCompositeTiles, rectangleAoi } from "@bok/core";
 import { writeArrayBuffer } from "geotiff";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CompositeProgress, compositeUrl, fetchTiledComposite } from "./composite.js";
@@ -178,7 +178,7 @@ describe("fetchTiledComposite — one tile", () => {
     const plan = planCompositeTiles(KILADHA);
     const fetchFn = stubFetch(() => tiffResponse(plan.width, plan.height, 0));
 
-    await fetchTiledComposite({ bbox: KILADHA, ...QUERY });
+    await fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY });
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url] = urlsOf(fetchFn);
@@ -191,7 +191,7 @@ describe("fetchTiledComposite — one tile", () => {
     const plan = planCompositeTiles(KILADHA);
     stubFetch(() => tiffResponse(plan.width, plan.height, 0));
 
-    const composite = await fetchTiledComposite({ bbox: KILADHA, ...QUERY });
+    const composite = await fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY });
 
     expect(composite.width).toBe(plan.width);
     expect(composite.height).toBe(plan.height);
@@ -206,7 +206,10 @@ describe("fetchTiledComposite — one tile", () => {
     stubFetch(() => tiffResponse(plan.width, plan.height, 0, true));
 
     const seen: CompositeProgress[] = [];
-    await fetchTiledComposite({ bbox: KILADHA, ...QUERY }, { onProgress: (p) => seen.push(p) });
+    await fetchTiledComposite(
+      { aoi: rectangleAoi(KILADHA), ...QUERY },
+      { onProgress: (p) => seen.push(p) },
+    );
 
     expect(seen).toEqual([
       { completed: 0, total: 1, cached: 0 },
@@ -226,7 +229,7 @@ describe("fetchTiledComposite — several tiles", () => {
       tiffResponse(plan.tiles[call].width, plan.tiles[call].height, 0),
     );
 
-    await fetchTiledComposite({ bbox: TWO_TILES, ...QUERY });
+    await fetchTiledComposite({ aoi: rectangleAoi(TWO_TILES), ...QUERY });
 
     const urls = urlsOf(fetchFn);
     expect(urls).toHaveLength(2);
@@ -245,7 +248,7 @@ describe("fetchTiledComposite — several tiles", () => {
       tiffResponse(plan.tiles[call].width, plan.tiles[call].height, bases[call]),
     );
 
-    const composite = await fetchTiledComposite({ bbox: TWO_TILES, ...QUERY });
+    const composite = await fetchTiledComposite({ aoi: rectangleAoi(TWO_TILES), ...QUERY });
 
     expect(composite.width).toBe(plan.width);
     expect(composite.height).toBe(plan.height);
@@ -269,7 +272,7 @@ describe("fetchTiledComposite — several tiles", () => {
 
     const seen: CompositeProgress[] = [];
     await fetchTiledComposite(
-      { bbox: TWO_TILES, ...QUERY },
+      { aoi: rectangleAoi(TWO_TILES), ...QUERY },
       { onProgress: (p) => seen.push(p), concurrency: 1 },
     );
 
@@ -287,14 +290,14 @@ describe("fetchTiledComposite — failure", () => {
     );
 
     await expect(
-      fetchTiledComposite({ bbox: TWO_TILES, ...QUERY }, { concurrency: 1 }),
+      fetchTiledComposite({ aoi: rectangleAoi(TWO_TILES), ...QUERY }, { concurrency: 1 }),
     ).rejects.toThrow(/Tile 2 of 2 \(row 0, col 1\) failed: AOI is nonsense/);
   });
 
   it("does not dress a single-tile failure up as a tile", async () => {
     stubFetch(() => errorResponse(400, "AOI is nonsense"));
 
-    await expect(fetchTiledComposite({ bbox: KILADHA, ...QUERY })).rejects.toThrow(
+    await expect(fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY })).rejects.toThrow(
       /^The composite failed: AOI is nonsense/,
     );
   });
@@ -302,7 +305,7 @@ describe("fetchTiledComposite — failure", () => {
   /** A 400 will fail the same way forever; paying for it three times is pure waste. */
   it("does not retry a 400", async () => {
     const fetchFn = stubFetch(() => errorResponse(400, "bad bbox"));
-    await expect(fetchTiledComposite({ bbox: KILADHA, ...QUERY })).rejects.toThrow();
+    await expect(fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY })).rejects.toThrow();
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -322,7 +325,7 @@ describe("fetchTiledComposite — failure", () => {
         }),
     );
 
-    const composite = await fetchTiledComposite({ bbox: TALL, ...QUERY });
+    const composite = await fetchTiledComposite({ aoi: rectangleAoi(TALL), ...QUERY });
 
     expect(composite.width).toBe(width);
     expect(composite.height).toBe(height);
@@ -343,7 +346,9 @@ describe("fetchTiledComposite — failure", () => {
         }),
     );
 
-    const failure = await fetchTiledComposite({ bbox: KILADHA, ...QUERY }).catch((e) => e);
+    const failure = await fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY }).catch(
+      (e) => e,
+    );
 
     expect(failure).toBeInstanceOf(Error);
     expect(failure.message).toMatch(/^The composite failed: the GeoTIFF could not be decoded \(/);
@@ -359,7 +364,7 @@ describe("fetchTiledComposite — failure", () => {
         }),
     );
 
-    await expect(fetchTiledComposite({ bbox: KILADHA, ...QUERY })).rejects.toThrow();
+    await expect(fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY })).rejects.toThrow();
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
@@ -370,7 +375,7 @@ describe("fetchTiledComposite — failure", () => {
       call === 0 ? errorResponse(502, "CDSE hiccup") : tiffResponse(plan.width, plan.height, 0),
     );
 
-    const composite = await fetchTiledComposite({ bbox: KILADHA, ...QUERY });
+    const composite = await fetchTiledComposite({ aoi: rectangleAoi(KILADHA), ...QUERY });
 
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(composite.width).toBe(plan.width);

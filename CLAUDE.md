@@ -168,11 +168,17 @@ that the pilot types into Pilot 2 by hand.
   `<innerBoundaryIs>`; whether Pilot 2 honours them is unverified on the RC, same
   as the multi-Placemark form. A rejected file is loud, a dropped hole is silent.
 - **The AOI is a polygon; `BBox` is the raster envelope.** They are not the same
-  thing and the distinction is load-bearing. The composite is requested and cached
-  on the envelope, so reshaping the AOI inside it costs a re-clip and no refetch.
+  thing and the distinction is load-bearing. The envelope fixes the merged raster's
+  pixel grid — but since D12 it is not what gets fetched: the composite is requested
+  as horizontal strips that follow the polygon, so a diagonal AOI no longer pays for
+  the open sea in its corners. Reshaping the AOI inside its envelope re-clips for
+  free and refetches only strips the new shape reaches and the old one did not.
   Never send the polygon to the Processing API as `bounds.geometry`: masked pixels
   come back as no-data, `landMask` reads them as land, and a spurious coastal
-  ribbon grows along the AOI edge.
+  ribbon grows along the AOI edge. Strips are safe because each request is still a
+  box — and they carry a 200 m margin for exactly that reason, since ground no strip
+  covers arrives as `sceneCount 0` and is therefore land to `landMask` too. That
+  margin is coupled to the coast slider's 100 m maximum.
 - **geotiff is patched, and the patch is load-bearing.** Sentinel Hub returns
   big-endian (`MM`) GeoTIFFs. geotiff 3.0.5 reads lazily-loaded IFD arrays as
   little-endian unconditionally, so `StripOffsets` comes back byte-swapped and every

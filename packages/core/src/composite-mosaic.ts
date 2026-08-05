@@ -29,6 +29,11 @@ function describe(plan: CompositeTilePlan, index: number): string {
  * the bbox, every tile lands on an exact integer offset and this is a row-wise copy —
  * no resampling, no interpolation, no seam arithmetic.
  *
+ * A coverage plan (issue #46) leaves parts of the grid uncovered, and those pixels keep
+ * the `Float32Array`'s zero. That is deliberate rather than merely convenient: zero
+ * `sceneCount` is exactly what land, cloud and no-data already produce, so ground nobody
+ * requested is indistinguishable downstream from ground the satellite could not see.
+ *
  * Dimension mismatches throw rather than being absorbed. A raster that is not the size it
  * was asked for means the API ignored the explicit output size, and the alternative to
  * failing here is a mosaic that is silently skewed by a pixel per tile — which looks
@@ -60,9 +65,12 @@ export function mergeCompositeTiles(
     }
   }
 
-  // One tile is the overwhelmingly common case (any AOI that worked before #41), and the
-  // copy would be a pointless second allocation of the whole raster.
-  if (plan.tiles.length === 1) {
+  // One tile filling the grid is the overwhelmingly common case (any AOI that worked
+  // before #41), and the copy would be a pointless second allocation of the whole raster.
+  // The size check is what keeps a one-strip coverage plan (issue #46) out of this path:
+  // its single tile is narrower than the grid, and returning it whole would silently
+  // reinterpret its rows as the full width.
+  if (plan.tiles.length === 1 && plan.coveredPx === plan.width * plan.height) {
     const [only] = rasters;
     return {
       width: plan.width,

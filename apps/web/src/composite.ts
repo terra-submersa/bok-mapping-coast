@@ -1,9 +1,10 @@
 import {
+  type Aoi,
   type BBox,
   type CompositeTile,
   type CompositeTilePlan,
   mergeCompositeTiles,
-  planCompositeTiles,
+  planCompositeCoverage,
   type TileRaster,
 } from "@bok/core";
 import { fromArrayBuffer } from "geotiff";
@@ -19,8 +20,20 @@ export interface Composite {
   bbox: BBox;
 }
 
+/** One request's worth: a box, because the Processing API takes nothing else. */
 export interface CompositeQuery {
   bbox: BBox;
+  from: string;
+  to: string;
+}
+
+/**
+ * A whole composite's worth. Keyed on the AOI polygon rather than its envelope, because
+ * since issue #46 the shape decides which strips are fetched, not merely how big the
+ * merged grid is.
+ */
+export interface CompositeAoiQuery {
+  aoi: Aoi;
   from: string;
   to: string;
 }
@@ -161,18 +174,23 @@ export interface TiledCompositeOptions {
 }
 
 /**
- * Builds the composite for an AOI envelope, in as many Processing API requests as its
- * size demands, and stitches them into one raster (issue #41).
+ * Builds the composite for an AOI, in as many Processing API requests as its size and
+ * shape demand, and stitches them into one raster (issues #41 and #46).
  *
- * An envelope that already fits sends exactly one request, without the size parameters —
- * so the common case is unchanged all the way down to the cache key.
+ * The plan follows the polygon: a diagonal AOI is fetched as strips that skip the open
+ * sea and the hillside its envelope would otherwise include. Ground no strip covers stays
+ * zero in the merged raster, which reads downstream as no-data.
+ *
+ * An AOI whose envelope fits in one request, and whose shape saves too little to be worth
+ * splitting, still sends exactly one request without the size parameters — so that case is
+ * unchanged all the way down to the cache key.
  */
 export async function fetchTiledComposite(
-  query: CompositeQuery,
+  { aoi, from, to }: CompositeAoiQuery,
   { onProgress, concurrency = 3, signal }: TiledCompositeOptions = {},
 ): Promise<Composite> {
-  const plan = planCompositeTiles(query.bbox);
-  const single = plan.tiles.length === 1;
+  const plan = planCompositeCoverage(aoi);
+  const single = plan.tiles.length === 1 && plan.coveredPx === plan.width * plan.height;
 
   let cached = 0;
   let completed = 0;
@@ -184,7 +202,7 @@ export async function fetchTiledComposite(
       plan.tiles,
       (tile) =>
         fetchCompositeTile(
-          { ...query, bbox: tile.bbox },
+          { bbox: tile.bbox, from, to },
           single ? undefined : { width: tile.width, height: tile.height },
           signal,
         ),

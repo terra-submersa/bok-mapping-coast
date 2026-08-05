@@ -366,9 +366,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setCompositeError(null);
     setCompositeProgress(null);
     try {
-      // Tiled when the envelope needs it, one plain request when it does not (issue #41).
+      // Strips that follow the polygon (issue #46), split further when the envelope is
+      // wider than one request allows (issue #41), and one plain request when neither
+      // applies. The AOI goes in whole: the plan is a function of its shape, not just of
+      // the envelope it spans.
       const next = await fetchTiledComposite(
-        { bbox: aoiEnvelope(current), from, to },
+        { aoi: current, from, to },
         { onProgress: setCompositeProgress },
       );
       const range = waterRange(next);

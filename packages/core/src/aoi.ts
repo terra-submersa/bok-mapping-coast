@@ -23,10 +23,14 @@ export type Aoi = GeoJSON.Polygon;
  *
  * `BBox` has not gone away, it has been demoted: Sentinel Hub takes a box, and
  * `RatioGrid`'s pixel-to-lon/lat mapping interpolates over box corners, so the
- * raster is necessarily rectangular even when the survey area is not. Keeping
- * the two ideas apart is what makes reshaping the AOI inside its existing
- * envelope free — the cached composite is still valid, so it costs a re-clip
- * and not a refetch.
+ * raster is necessarily rectangular even when the survey area is not.
+ *
+ * What it no longer decides is what gets *fetched*. Since issue #46 the composite
+ * is planned from the polygon, as strips — see `planCompositeCoverage` — so this
+ * bounds the merged grid rather than the bill. Reshaping the AOI inside an
+ * unchanged envelope still re-clips for free and re-uses every strip it still
+ * touches; it costs a fetch only where the new shape reaches ground the old one
+ * never did.
  */
 export function aoiEnvelope(aoi: Polygonal): BBox {
   const [minLon, minLat, maxLon, maxLat] = turfBbox(aoi);

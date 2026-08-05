@@ -3,7 +3,7 @@ import {
   bboxAreaKm2,
   type CompositeTilePlan,
   parseAoiInput,
-  planCompositeTiles,
+  planCompositeCoverage,
   polygonAreaKm2,
 } from "@bok/core";
 import { useMemo, useState } from "react";
@@ -39,22 +39,22 @@ export function AreaPage() {
   const envelopeKm2 = useMemo(() => (envelope ? bboxAreaKm2(envelope) : null), [envelope]);
 
   /**
-   * How the envelope would be fetched, shown before the Planner spends anything on it.
-   * `planCompositeTiles` throws above the memory ceiling and nowhere else, so the catch
-   * is the one genuine refusal left now that the Processing API cap is merely a tile
-   * boundary (issue #41).
+   * How the AOI would be fetched, shown before the Planner spends anything on it — strips
+   * following the polygon rather than its whole envelope (issue #46). `planCompositeTiles`
+   * throws above the memory ceiling and nowhere else, so the catch is the one genuine
+   * refusal left now that the Processing API cap is merely a tile boundary (issue #41).
    */
   const { plan, planError } = useMemo((): {
     plan: CompositeTilePlan | null;
     planError: string | null;
   } => {
-    if (!envelope) return { plan: null, planError: null };
+    if (!aoi) return { plan: null, planError: null };
     try {
-      return { plan: planCompositeTiles(envelope), planError: null };
+      return { plan: planCompositeCoverage(aoi), planError: null };
     } catch (err) {
       return { plan: null, planError: err instanceof Error ? err.message : "AOI is too large." };
     }
-  }, [envelope]);
+  }, [aoi]);
 
   function handleClear() {
     stopDraw();
