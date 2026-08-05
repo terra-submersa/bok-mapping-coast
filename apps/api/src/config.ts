@@ -29,3 +29,15 @@ export function readCacheDir(env: NodeJS.ProcessEnv = process.env): string {
 export function readProjectDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return env.PROJECT_DB_PATH ?? ".cache/projects.sqlite";
 }
+
+/**
+ * SQLite file holding measured depth soundings (issue #47).
+ *
+ * Deliberately **not** under `.cache/`. Everything else in there can be recomputed — a
+ * composite refetched, a boundary re-derived — and the directory is documented as safe
+ * to delete on that basis. A sounding cannot: it costs a boat, a sounder and a morning
+ * on the water. `data/` is gitignored too, but nothing about it invites deletion.
+ */
+export function readSoundingDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return env.SOUNDING_DB_PATH ?? "data/soundings.sqlite";
+}

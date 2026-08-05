@@ -64,5 +64,11 @@ export {
   MIN_RING_AREA_M2,
 } from "./rings.js";
 export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
+export {
+  parseSounding,
+  parseSoundings,
+  type Sounding,
+  type SoundingInput,
+} from "./sounding.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
 export { addZones, subtractZones } from "./zones.js";

@@ -5,10 +5,17 @@ import { createCompositeCache } from "./cache.js";
 import { createProcessClient } from "./cdse/process.js";
 import { createTokenSource } from "./cdse/token.js";
 import { type CompositeService, createCompositeService } from "./composite.js";
-import { readCacheDir, readCdseCredentials, readProjectDbPath } from "./config.js";
+import {
+  readCacheDir,
+  readCdseCredentials,
+  readProjectDbPath,
+  readSoundingDbPath,
+} from "./config.js";
 import { createProjectStore, type ProjectStore } from "./projects/store.js";
 import { createCompositeRoutes } from "./routes/composite.js";
 import { createProjectRoutes } from "./routes/projects.js";
+import { createSoundingRoutes } from "./routes/soundings.js";
+import { createSoundingStore, type SoundingStore } from "./soundings/store.js";
 
 const app = new Hono();
 
@@ -40,8 +47,16 @@ function getProjectStore(): ProjectStore {
   return projectStore;
 }
 
+/** Same lazy opening, for the same reason. Its own file — see `readSoundingDbPath`. */
+let soundingStore: SoundingStore | undefined;
+function getSoundingStore(): SoundingStore {
+  if (!soundingStore) soundingStore = createSoundingStore(readSoundingDbPath());
+  return soundingStore;
+}
+
 app.route("/api", createCompositeRoutes({ get: (request) => getService().get(request) }));
 app.route("/api", createProjectRoutes(getProjectStore));
+app.route("/api", createSoundingRoutes(getSoundingStore));
 
 const port = Number(process.env.PORT ?? 8787);
 
