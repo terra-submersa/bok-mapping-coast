@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AccordionContext } from "./AccordionContext.js";
 import { useBoundaryState } from "./BoundaryContext.js";
 import { BufferPanel } from "./BufferPanel.js";
+import { useCalibrationState } from "./CalibrationContext.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { ExportPanel } from "./ExportPanel.js";
 import { useMapControls } from "./MapLayout.js";
@@ -68,6 +69,9 @@ export function BoundaryPage() {
     boundary,
   } = useBoundaryState();
 
+  /** The ratio→metres fit, so the threshold can be read and set in metres (issue #50). */
+  const { fit } = useCalibrationState();
+
   // An inclusion drawn outside the AOI is clipped away to nothing. Saying so beats
   // leaving the Planner to wonder why the boundary did not move (issue #16).
   const strandedInclusions = clippedInclusions.filter(
@@ -109,6 +113,7 @@ export function BoundaryPage() {
           ringCount={rings.length}
           coastMetres={coastMetres}
           onCoastMetresChange={setCoastMetres}
+          fit={fit}
         />
       )}
       {rings.length > 0 && (
