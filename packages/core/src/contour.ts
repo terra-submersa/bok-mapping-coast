@@ -40,7 +40,11 @@ export function shallowWaterContour(
 
   const negated = new Float64Array(width * height);
   for (let i = 0; i < negated.length; i++) {
-    negated[i] = sceneCount[i] >= minSceneCount ? -ratio[i] : EXCLUDED;
+    // A non-finite ratio is excluded alongside land. `-NaN` is still NaN, and handing
+    // that to d3-contour makes the contour quietly wrong rather than loudly broken —
+    // which is the worse of the two failures (issue #44).
+    const water = sceneCount[i] >= minSceneCount && Number.isFinite(ratio[i]);
+    negated[i] = water ? -ratio[i] : EXCLUDED;
   }
 
   // d3-contour is typed as number[] but only ever indexes and reads .length, so a

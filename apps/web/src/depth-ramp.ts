@@ -31,7 +31,12 @@ const SCENE_COUNT_RAMP: [number, number, number][] = [
 ];
 
 function interpolateRamp(ramp: [number, number, number][], t: number): [number, number, number] {
-  const scaled = Math.min(1, Math.max(0, t)) * (ramp.length - 1);
+  // A non-finite position would make `Math.floor` return NaN, index the ramp out of
+  // bounds, and throw — which is how five NaN pixels in 6.8 million blanked the entire
+  // depth layer (issue #44). Callers are expected to skip those pixels; this is the
+  // belt-and-braces guard so no future source of NaN can take the map down again.
+  const position = Number.isFinite(t) ? t : 0;
+  const scaled = Math.min(1, Math.max(0, position)) * (ramp.length - 1);
   const i = Math.min(ramp.length - 2, Math.floor(scaled));
   const f = scaled - i;
   const a = ramp[i];
@@ -105,7 +110,9 @@ export function waterRange(composite: Composite): Range | null {
   const sample = new Float64Array(Math.ceil(ratio.length / stride));
   let count = 0;
   for (let i = 0; i < ratio.length; i += stride) {
-    if (sceneCount[i] > 0) sample[count++] = ratio[i];
+    // Non-finite ratios are excluded, not clamped. TypedArray sort puts NaN last, so a
+    // single one becomes the 98th-percentile maximum and flattens the whole ramp (#44).
+    if (sceneCount[i] > 0 && Number.isFinite(ratio[i])) sample[count++] = ratio[i];
   }
   return percentileRange(sample.subarray(0, count));
 }
@@ -137,7 +144,9 @@ export function renderCompositeRgba(
     for (let x = 0; x < width; x++) {
       const source = sourceRow + x * stride;
       const offset = (y * width + x) * 4;
-      if (sceneCount[source] < minSceneCount) {
+      // A non-finite ratio is a pixel carrying no depth information — the same thing as
+      // no data, and drawn the same way (#44).
+      if (sceneCount[source] < minSceneCount || !Number.isFinite(ratio[source])) {
         rgba[offset + 3] = 0;
         continue;
       }

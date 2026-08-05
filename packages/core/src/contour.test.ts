@@ -133,3 +133,36 @@ describe("countVertices", () => {
     expect(countVertices(contour)).toBeGreaterThan(3);
   });
 });
+
+describe("shallowWaterContour with non-finite ratios", () => {
+  /** Issue #44: `-NaN` is still NaN, and d3-contour given NaN goes quietly wrong. */
+  it("excludes a NaN pixel instead of contouring it", () => {
+    const width = 8;
+    const height = 8;
+    const ratio = new Float64Array(width * height).fill(5); // deep everywhere
+    const sceneCount = new Float64Array(width * height).fill(8);
+    // One shallow patch, and one NaN sitting right beside it.
+    ratio[27] = 1;
+    ratio[28] = Number.NaN;
+
+    const grid = {
+      width,
+      height,
+      ratio,
+      sceneCount,
+      bbox: [23.105, 37.418, 23.14, 37.435] as [number, number, number, number],
+    };
+
+    const contour = shallowWaterContour(grid, 2);
+    expect(contour.type).toBe("MultiPolygon");
+    // Every coordinate must be a real position — a NaN leaking through shows up here.
+    for (const polygon of contour.coordinates) {
+      for (const ring of polygon) {
+        for (const [lon, lat] of ring) {
+          expect(Number.isFinite(lon)).toBe(true);
+          expect(Number.isFinite(lat)).toBe(true);
+        }
+      }
+    }
+  });
+});

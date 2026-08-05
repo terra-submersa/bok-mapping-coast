@@ -254,3 +254,50 @@ describe("range sampling on large rasters", () => {
     expect(waterRange(small)).toEqual({ min: 1, max: 9 });
   });
 });
+
+/**
+ * Five NaN pixels in 6.8 million blanked the entire depth layer on the first real
+ * multi-tile load (issue #44). The evalscript rejects B02 <= 0, but B02 = B03 = 0.001
+ * passes that and yields ln(1)/ln(1) = 0/0.
+ */
+describe("non-finite ratios", () => {
+  it("draws a NaN pixel transparent rather than throwing", () => {
+    const rgba = renderCompositeRgba(composite([1.5, Number.NaN], [8, 8]), { min: 1, max: 2 });
+    expect(rgba[3]).toBe(255);
+    expect(rgba[7]).toBe(0);
+  });
+
+  it("draws an infinite pixel transparent too", () => {
+    const rgba = renderCompositeRgba(composite([1.5, Number.POSITIVE_INFINITY], [8, 8]), {
+      min: 1,
+      max: 2,
+    });
+    expect(rgba[7]).toBe(0);
+  });
+
+  it("keeps a NaN out of the ramp stretch", () => {
+    // TypedArray sort puts NaN last, so an unfiltered NaN becomes the maximum.
+    const range = waterRange(composite([1, 1.1, 1.2, Number.NaN], [8, 8, 8, 8]));
+    expect(range).not.toBeNull();
+    if (!range) return;
+    expect(Number.isFinite(range.min)).toBe(true);
+    expect(Number.isFinite(range.max)).toBe(true);
+    // The composite helper stores Float32, so 1.2 comes back as 1.2000000476837158.
+    expect(range.max).toBeCloseTo(1.2, 5);
+  });
+
+  it("returns null when every water pixel is non-finite", () => {
+    expect(waterRange(composite([Number.NaN, Number.NaN], [8, 8]))).toBeNull();
+  });
+
+  it("clamps a non-finite ramp position instead of indexing out of bounds", () => {
+    expect(() => rampColour(Number.NaN)).not.toThrow();
+    expect(rampColour(Number.NaN)).toEqual(rampColour(0));
+  });
+
+  it("survives a whole-raster render with a NaN in it", () => {
+    const source = grid(64, 64);
+    source.ratio[500] = Number.NaN;
+    expect(() => renderCompositeRgba(source, { min: 0, max: 4095 })).not.toThrow();
+  });
+});
