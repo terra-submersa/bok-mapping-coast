@@ -5,7 +5,26 @@ import type { Aoi } from "./aoi.js";
  * validates and stores it, and neither owns it — which is the whole reason it lives
  * in `core` rather than in either of them.
  */
-export const PROJECT_SCHEMA_VERSION = 1;
+export const PROJECT_SCHEMA_VERSION = 2;
+
+/** Versions that still parse. Anything older than the oldest here is a hard error. */
+const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
+
+export interface ProjectCalibration {
+  /**
+   * Soundings this project keeps out of its ratio→metres fit (issue #13).
+   *
+   * The soundings themselves are global — they measure the seabed and outlive any plan
+   * (issue #47). What belongs to a project is the *judgement*: fourteen readings across
+   * two sites 12 km apart, with different clarity and substrate, may fit worse as one
+   * model than as two, and which ones to drop is a decision about this survey area.
+   *
+   * `m1` and `m0` are deliberately absent. The fit is derived from soundings × composite,
+   * so storing it would let a saved file disagree with the raster sitting beside it —
+   * the same argument D10 makes about the boundary.
+   */
+  excludedSoundingIds: string[];
+}
 
 export interface ProjectParams {
   /** Null until a composite has been loaded and a range is known. */
@@ -29,6 +48,7 @@ export interface ProjectDocument {
   inclusions: GeoJSON.Polygon[];
   dateRange: { from: string; to: string };
   params: ProjectParams;
+  calibration: ProjectCalibration;
 }
 
 /** A stable id from a name: lowercase, dashes, no surprises in a URL. */
@@ -58,9 +78,21 @@ export function projectSlug(name: string): string {
 export function parseProjectDocument(value: unknown): ProjectDocument {
   const doc = asRecord(value, "A project must be an object.");
 
-  if (doc.schemaVersion !== PROJECT_SCHEMA_VERSION) {
+  /**
+   * Older versions are upgraded, not rejected.
+   *
+   * The first real project — a 25-vertex diagonal coastal band, 285 km² of water, the
+   * only measurement this repo has of how the pipeline behaves at scale — is a v1 row
+   * sitting in someone's SQLite file. Refusing it on the version number would have been
+   * silent data loss the first time they opened it, in exchange for nothing: v2 adds one
+   * field whose empty value is exactly what a v1 document means.
+   *
+   * A *newer* version is still a hard error. Guessing at a field that has not been
+   * invented yet is not something this can do.
+   */
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(doc.schemaVersion as 1 | 2)) {
     throw new Error(
-      `Unsupported project schema version ${String(doc.schemaVersion)} — expected ${PROJECT_SCHEMA_VERSION}.`,
+      `Unsupported project schema version ${String(doc.schemaVersion)} — expected ${SUPPORTED_SCHEMA_VERSIONS.join(" or ")}.`,
     );
   }
 
@@ -99,7 +131,21 @@ export function parseProjectDocument(value: unknown): ProjectDocument {
       coastMetres: params.coastMetres as number,
       minRingAreaM2: params.minRingAreaM2 as number,
     },
+    calibration: parseCalibration(doc.calibration),
   };
+}
+
+/** Absent on every v1 document, and on a v2 one that has never excluded anything. */
+function parseCalibration(value: unknown): ProjectCalibration {
+  if (value === undefined || value === null) return { excludedSoundingIds: [] };
+  const calibration = asRecord(value, "The calibration must be an object.");
+
+  const ids = calibration.excludedSoundingIds;
+  if (ids === undefined || ids === null) return { excludedSoundingIds: [] };
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
+    throw new Error("The excluded sounding ids must be a list of strings.");
+  }
+  return { excludedSoundingIds: ids };
 }
 
 function asRecord(value: unknown, message: string): Record<string, unknown> {

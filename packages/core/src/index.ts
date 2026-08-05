@@ -61,6 +61,7 @@ export {
 } from "./processing-limit.js";
 export {
   PROJECT_SCHEMA_VERSION,
+  type ProjectCalibration,
   type ProjectDocument,
   type ProjectParams,
   parseProjectDocument,

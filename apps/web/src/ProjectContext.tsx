@@ -306,6 +306,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       inclusions,
       dateRange: { from, to },
       params: { threshold, tolerance, bufferMetres, coastMetres, minRingAreaM2 },
+      // The soundings are not in here, and must not be: they are global (issue #47).
+      // Only which of them this project leaves out of its fit (issue #13).
+      calibration: { excludedSoundingIds },
     }),
     [
       projectName,
@@ -319,6 +322,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       bufferMetres,
       coastMetres,
       minRingAreaM2,
+      excludedSoundingIds,
     ],
   );
 
@@ -363,6 +367,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setBufferMetres(document.params.bufferMetres);
         setCoastMetres(document.params.coastMetres);
         setMinRingAreaM2(document.params.minRingAreaM2);
+        // The soundings stay put — they are not this project's, and reloading them here
+        // would make opening a project look like it had changed the survey.
+        setExcludedSoundingIds(document.calibration.excludedSoundingIds);
         setProjectName(document.name);
         storeLastOpened(document.name);
         setProjectError(null);

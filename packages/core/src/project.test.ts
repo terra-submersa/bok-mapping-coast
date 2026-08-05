@@ -4,7 +4,7 @@ import { parseProjectDocument, projectSlug } from "./project.js";
 
 function valid() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "Kiladha",
     aoi: rectangleAoi([23.1, 37.4, 23.14, 37.44]),
     exclusions: [],
@@ -17,6 +17,7 @@ function valid() {
       coastMetres: 30,
       minRingAreaM2: 5000,
     },
+    calibration: { excludedSoundingIds: [] },
   };
 }
 
@@ -56,7 +57,41 @@ describe("parseProjectDocument", () => {
   });
 
   it("rejects an unknown schema version instead of guessing", () => {
-    expect(() => parseProjectDocument({ ...valid(), schemaVersion: 2 })).toThrow(/schema version/);
+    expect(() => parseProjectDocument({ ...valid(), schemaVersion: 99 })).toThrow(/schema version/);
+  });
+
+  it("upgrades a v1 document rather than rejecting it", () => {
+    // The first real project — 285 km² of water, the only measurement of the pipeline at
+    // scale — was saved as v1. Refusing it on the version number is silent data loss.
+    const { calibration, ...rest } = valid();
+    const v1 = { ...rest, schemaVersion: 1 };
+    const parsed = parseProjectDocument(v1);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.calibration).toEqual({ excludedSoundingIds: [] });
+    // Everything a v1 document did carry survives the upgrade untouched.
+    expect(parsed.aoi?.coordinates[0]).toHaveLength(5);
+    expect(parsed.params.threshold).toBe(0.42);
+  });
+
+  it("keeps the excluded sounding ids", () => {
+    const doc = { ...valid(), calibration: { excludedSoundingIds: ["bathy-0015"] } };
+    expect(parseProjectDocument(doc).calibration.excludedSoundingIds).toEqual(["bathy-0015"]);
+  });
+
+  it("defaults a missing calibration to excluding nothing", () => {
+    const { calibration, ...rest } = valid();
+    expect(parseProjectDocument(rest).calibration).toEqual({ excludedSoundingIds: [] });
+  });
+
+  it("rejects excluded ids that are not strings", () => {
+    const doc = { ...valid(), calibration: { excludedSoundingIds: [7] } };
+    expect(() => parseProjectDocument(doc)).toThrow(/list of strings/);
+  });
+
+  it("does not store the fit — it is derived from soundings and the composite", () => {
+    // Storing m1/m0 would let a saved file disagree with the raster beside it (D10).
+    const doc = { ...valid(), calibration: { excludedSoundingIds: [], m1: 12, m0: 3 } };
+    expect(parseProjectDocument(doc).calibration).toEqual({ excludedSoundingIds: [] });
   });
 
   it("rejects a nameless project", () => {
