@@ -5,6 +5,7 @@ import {
   PROJECT_SCHEMA_VERSION,
   type ProjectDocument,
   projectSlug,
+  type Sounding,
   sameBbox,
 } from "@bok/core";
 import {
@@ -30,6 +31,12 @@ import {
   saveProject,
   storeLastOpened,
 } from "./projects.js";
+import {
+  deleteSounding as deleteSoundingRequest,
+  importSoundingCsv,
+  listSoundings,
+  saveSounding,
+} from "./soundings.js";
 import {
   loadStoredExclusions,
   loadStoredInclusions,
@@ -124,6 +131,19 @@ export interface ProjectContextValue {
   openProject: (id: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
+  /**
+   * Measured depths (issues #47, #48). Global rather than per-project — a sounding
+   * measures the seabed, so the same reading serves every project covering that water.
+   * Kept here because the map paints them and the Calibrate sidebar tabulates them, the
+   * same reason the composite lives here.
+   */
+  soundings: Sounding[];
+  soundingError: string | null;
+  refreshSoundings: () => Promise<void>;
+  addSounding: (sounding: Sounding) => Promise<void>;
+  removeSounding: (id: string) => Promise<void>;
+  importSoundings: (csv: string) => Promise<void>;
+
   /** Which contour ring is the flight area (story 4.1). */
   selectedAnchor: GeoJSON.Position | null;
   setSelectedAnchor: (anchor: GeoJSON.Position | null) => void;
@@ -192,6 +212,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projectName, setProjectName] = useState(() => loadLastOpened() ?? "Kiladha");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectError, setProjectError] = useState<string | null>(null);
+
+  const [soundings, setSoundings] = useState<Sounding[]>([]);
+  const [soundingError, setSoundingError] = useState<string | null>(null);
 
   useEffect(() => storeExclusions(exclusions), [exclusions]);
   useEffect(() => storeInclusions(inclusions), [inclusions]);
@@ -352,12 +375,71 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     [refreshProjects],
   );
 
+  const refreshSoundings = useCallback(async () => {
+    try {
+      setSoundings(await listSoundings());
+      setSoundingError(null);
+    } catch (err) {
+      setSoundingError(err instanceof Error ? err.message : "Could not list the soundings.");
+    }
+  }, []);
+
+  /**
+   * Every mutation re-lists rather than patching local state. The server derives a
+   * sounding's id from its name, so a rename or a re-import is an upsert whose result the
+   * client cannot predict — and there are fourteen of them, not fourteen thousand.
+   */
+  const addSounding = useCallback(
+    async (sounding: Sounding) => {
+      try {
+        await saveSounding(sounding);
+        setSoundingError(null);
+        await refreshSoundings();
+      } catch (err) {
+        setSoundingError(err instanceof Error ? err.message : "Could not save the sounding.");
+      }
+    },
+    [refreshSoundings],
+  );
+
+  const removeSounding = useCallback(
+    async (id: string) => {
+      try {
+        await deleteSoundingRequest(id);
+        setSoundingError(null);
+        await refreshSoundings();
+      } catch (err) {
+        setSoundingError(err instanceof Error ? err.message : "Could not delete the sounding.");
+      }
+    },
+    [refreshSoundings],
+  );
+
+  const importSoundings = useCallback(
+    async (csv: string) => {
+      try {
+        await importSoundingCsv(csv);
+        setSoundingError(null);
+        await refreshSoundings();
+      } catch (err) {
+        setSoundingError(err instanceof Error ? err.message : "Could not import the soundings.");
+      }
+    },
+    [refreshSoundings],
+  );
+
   // One listing at mount. A missing or unreachable API leaves `projectError` set and
   // everything else working — the draft is in localStorage, so planning is possible
   // without the project store.
   useEffect(() => {
     void refreshProjects();
   }, [refreshProjects]);
+
+  // Soundings likewise, and independently: they are not part of a project, so opening
+  // one neither loads nor clears them.
+  useEffect(() => {
+    void refreshSoundings();
+  }, [refreshSoundings]);
 
   const loadComposite = useCallback(async () => {
     const current = aoiRef.current;
@@ -441,6 +523,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         saveCurrentProject,
         openProject,
         deleteProject,
+        soundings,
+        soundingError,
+        refreshSoundings,
+        addSounding,
+        removeSounding,
+        importSoundings,
         selectedAnchor,
         setSelectedAnchor,
         allRingsSelected,

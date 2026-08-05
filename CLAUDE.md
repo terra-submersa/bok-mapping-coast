@@ -150,10 +150,13 @@ that the pilot types into Pilot 2 by hand.
 
 ### Miscellaneous
 
-- **Refraction**: submerged features are displaced by n≈1.34. Decide and document
-  whether `max_depth` means true depth or apparent depth. Currently undecided.
-- **Vertical datum**: Argolic Gulf tides are ~20–30 cm, so small, but "4 m" still
-  needs a stated reference. Currently undecided.
+- **Refraction and vertical datum are settled — D13.** `max_depth` means **true depth**,
+  measured below the instantaneous sea surface, and no refraction correction is applied
+  anywhere. Both questions were answered by the data being acoustic: an echo sounder
+  measures the ping, and n≈1.34 displaces where a feature *looks*, not where the echo
+  returns from. Since the ratio is fitted against those soundings, the model already
+  returns true depth and correcting would double-count. Tides of 20–30 cm are stated as
+  residual error, not corrected; `Sounding.measuredAt` keeps the correction possible.
 - **Pilot 2 KML is fussy.** The reliable approach is to export a dummy mission from
   Pilot itself and use its XML as a template, rather than emitting generic KML.
   Do not consider issue #7 done until a file has round-tripped on the actual RC.
@@ -217,10 +220,11 @@ that the pilot types into Pilot 2 by hand.
 
 Flagged rather than guessed. Raise these rather than silently deciding.
 
-- Refraction convention for `max_depth`.
-- Vertical datum reference.
 - Whether multi-year composite comparison is wanted (potentially interesting for
   coastal change, definitely scope creep for v1).
+- Whether one fit serves the whole gulf. The first survey has 14 points at two sites
+  12 km apart, with different clarity and substrate; a single `m1`/`m0` across both may
+  be worse than either alone. The residuals will say.
 
 ## Backlog
 

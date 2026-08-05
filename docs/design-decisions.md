@@ -316,10 +316,39 @@ goes up and the saving goes down. It is one constant, `COMPOSITE_STRIP_PX`.
 
 ---
 
-## Undecided
+## D13 — Depth is true depth below the instantaneous surface
 
-- **Refraction convention.** Submerged features are displaced by n≈1.34. Does
-  `max_depth` mean true depth or apparent depth? Blocks #12.
-- **Vertical datum.** Argolic Gulf tides are ~20–30 cm so the error is small, but "4 m"
-  still needs a stated reference (MSL vs. instantaneous surface at acquisition).
-  Blocks #12.
+**Decided.** Supersedes both entries that stood under *Undecided* from the start of the
+project. `max_depth` means **true depth**, no refraction correction is applied anywhere,
+and the vertical datum is the **sea surface at the moment of the measurement**.
+
+**Why.** Both questions were unanswerable until there was data, and then the data
+answered them by being what it is. On 2026-08-04 fourteen readings were taken in the
+Argolic Gulf with a **acoustic echo sounder** — 0.6 to 4.6 m, eight off
+Kiladha/Lambayanna and six twelve kilometres north.
+
+- **Refraction.** n≈1.34 displaces where a submerged feature *appears* to be along an
+  optical path. It does not touch an acoustic one: the ping goes down and comes back, and
+  what it measures is the distance. So the soundings are true depths — and since
+  `depth = m1 · ratio − m0` is fitted *against* them, the fitted model already returns
+  true depth. There is no correction to apply, and applying one would double-count.
+- **Datum.** Depth is measured from the transducer at the surface, so each reading is
+  relative to the instantaneous sea surface beneath the boat at that instant. Argolic
+  tides are 20–30 cm. That is smaller than the scatter a 10 m Sentinel-2 pixel and a
+  handheld GPS fix contribute between them, so it is **stated as residual error rather
+  than corrected for** — but `Sounding.measuredAt` is stored so the correction stays
+  possible if the error ever matters.
+
+**Cost.** Two costs, both accepted.
+
+The composite's own datum is not the same thing. A satellite scene is acquired at its own
+tide state, so ratio and depth are strictly measured against surfaces up to ~30 cm apart —
+noise absorbed into the fit's residual, not modelled.
+
+And "true depth" is the honest answer, not the useful one, for the case the whole project
+is about: a drone photographing the seabed sees the *apparent* position of everything
+under water. That matters for photogrammetric reconstruction later. It does not matter for
+a flight boundary, which is what this app emits — so the convention is chosen for the
+measurement, and any future reconstruction step will have to state its own.
+
+**Unblocks** #12. Recorded when the first real soundings arrived (#47).

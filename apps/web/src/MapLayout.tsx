@@ -4,6 +4,7 @@ import {
   findRingContaining,
   nearestVertexIndex,
   removeVertex,
+  type Sounding,
 } from "@bok/core";
 import {
   type GeoJSONSource,
@@ -35,6 +36,7 @@ const RINGS_SOURCE_ID = "rings";
 const BOUNDARY_SOURCE_ID = "boundary";
 const ZONES_SOURCE_ID = "zones";
 const INCLUSIONS_SOURCE_ID = "inclusions";
+const SOUNDINGS_SOURCE_ID = "soundings";
 
 /**
  * How close a shift-click has to land to count as "on" a vertex. A screen distance,
@@ -105,6 +107,26 @@ function zonesFeatureCollection(
   return {
     type: "FeatureCollection",
     features: zones.map((geometry) => ({ type: "Feature", properties: {}, geometry })),
+  };
+}
+
+/**
+ * Each measured depth as a point, labelled with its own reading (issue #49).
+ *
+ * The label is the whole point of the layer. A dot says a boat went there; "2.1" next to
+ * a dot over a dark patch says whether the SDB agrees with the seabed, which is the
+ * judgement Calibrate exists to support.
+ */
+function soundingsFeatureCollection(
+  soundings: readonly Sounding[],
+): GeoJSON.FeatureCollection<GeoJSON.Point, { label: string; depthM: number }> {
+  return {
+    type: "FeatureCollection",
+    features: soundings.map((sounding) => ({
+      type: "Feature",
+      properties: { label: `${sounding.depthM} m`, depthM: sounding.depthM },
+      geometry: { type: "Point", coordinates: [sounding.lon, sounding.lat] },
+    })),
   };
 }
 
@@ -181,6 +203,7 @@ function MapSurface() {
     addExclusion,
     inclusions,
     addInclusion,
+    soundings,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
 
@@ -424,6 +447,49 @@ function MapSurface() {
         paint: { "line-color": "#c62828", "line-width": 2, "line-dasharray": [2, 1] },
       });
 
+      /**
+       * Measured depths, drawn last so they sit over every derived layer (issue #49).
+       *
+       * They are the only thing on the map that was actually observed rather than
+       * computed, so nothing gets to cover them. White on a dark halo because the
+       * background is satellite imagery of water, which ranges from near-black over
+       * Posidonia to glare over sand.
+       */
+      map.addSource(SOUNDINGS_SOURCE_ID, {
+        type: "geojson",
+        data: soundingsFeatureCollection([]),
+      });
+      map.addLayer({
+        id: "soundings-point",
+        type: "circle",
+        source: SOUNDINGS_SOURCE_ID,
+        paint: {
+          "circle-radius": 5,
+          "circle-color": "#ffffff",
+          "circle-stroke-color": "#37474f",
+          "circle-stroke-width": 2,
+        },
+      });
+      map.addLayer({
+        id: "soundings-label",
+        type: "symbol",
+        source: SOUNDINGS_SOURCE_ID,
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          "text-offset": [0, -1.2],
+          // Fourteen points in two tight clusters: at low zoom the labels would
+          // overplot and MapLibre would silently drop most of them. Better to show all
+          // of them overlapping than to show four and imply that is the survey.
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "#263238",
+          "text-halo-width": 1.5,
+        },
+      });
+
       map.on("mouseenter", "rings-fill", () => {
         map.getCanvas().style.cursor = "pointer";
       });
@@ -513,6 +579,12 @@ function MapSurface() {
     const source = mapRef.current?.getSource(INCLUSIONS_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(zonesFeatureCollection(inclusions));
   }, [overlaysReady, inclusions]);
+
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(SOUNDINGS_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(soundingsFeatureCollection(soundings));
+  }, [overlaysReady, soundings]);
 
   // Dropping the composite has to take its layer with it, or a stale depth ramp stays
   // painted over an AOI it no longer belongs to — the bug issue #2's closing note is about.

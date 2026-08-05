@@ -1,29 +1,29 @@
+import { useState } from "react";
+import { AccordionContext } from "./AccordionContext.js";
+import { useProject } from "./ProjectContext.js";
+import { SoundingPanel } from "./SoundingPanel.js";
+
 /**
- * Placeholder for Epic 3. Deliberately says what is missing rather than showing
- * an empty shell that looks broken (issue #35).
+ * Step three: *how deep*. Known-depth readings, and — once #12 lands — the fit that
+ * turns the Stumpf ratio into metres.
+ *
+ * A sidebar over the shared map rather than a page of its own (issue #49), because every
+ * judgement this step supports is made by looking: whether a 2.1 m reading sits over a
+ * patch the composite calls shallow, whether a point that fits badly is over Posidonia.
+ * None of that survives being moved off the map.
  */
 export function CalibratePage() {
+  const { soundings, soundingError, importSoundings, removeSounding } = useProject();
+  const [activeSection, setActiveSection] = useState("soundings");
+
   return (
-    <div className="page">
-      <section className="panel">
-        <div className="panel-body">
-          <h2>Calibrate</h2>
-          <p>
-            Not built yet. This is where known-depth reference points will be dropped on the map
-            (#12) and persisted with the project (#13), turning the Stumpf ratio into metres.
-          </p>
-          <p className="hint">
-            #12 is blocked on two decisions still listed as Undecided in{" "}
-            <code>docs/design-decisions.md</code>: whether <code>max_depth</code> means true or
-            apparent depth given refraction at n≈1.34, and what vertical datum "4 m" is measured
-            against.
-          </p>
-          <p className="hint">
-            Until then the Plan view shows the raw ratio and no metres at all — per decision D3,
-            depth in metres is not displayed until at least three calibration points exist.
-          </p>
-        </div>
-      </section>
-    </div>
+    <AccordionContext.Provider value={{ activeId: activeSection, setActiveId: setActiveSection }}>
+      <SoundingPanel
+        soundings={soundings}
+        error={soundingError}
+        onImport={importSoundings}
+        onRemove={removeSounding}
+      />
+    </AccordionContext.Provider>
   );
 }

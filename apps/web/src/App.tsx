@@ -13,10 +13,13 @@ import { ProjectProvider } from "./ProjectContext.js";
  * `.app-main` is the positioned ancestor MapLayout's `position: absolute; inset: 0`
  * resolves against, which is what keeps the map below the banner rather than under it.
  *
- * Area and Boundary sit under a shared *layout* route so that switching between the
- * two planning steps swaps only the sidebar — the MapLibre instance underneath is
- * never unmounted (issue #38). `ProjectProvider` wraps the whole router so the AOI and
- * the composite also survive a detour to Calibrate or Fly.
+ * Area, Boundary and Calibrate sit under a shared *layout* route so that switching
+ * between the planning steps swaps only the sidebar — the MapLibre instance underneath
+ * is never unmounted (issue #38). `ProjectProvider` wraps the whole router so the AOI
+ * and the composite also survive a detour to Fly.
+ *
+ * Calibrate joined them in issue #49: a reference point is dropped *on the map* and read
+ * against the imagery under it, which a page with no map cannot do.
  */
 export function App() {
   return (
@@ -28,8 +31,8 @@ export function App() {
             <Route element={<MapLayout />}>
               <Route path="/area" element={<AreaPage />} />
               <Route path="/boundary" element={<BoundaryPage />} />
+              <Route path="/calibrate" element={<CalibratePage />} />
             </Route>
-            <Route path="/calibrate" element={<CalibratePage />} />
             <Route path="/fly" element={<FlyPage />} />
             {/* Vite's SPA fallback serves index.html for any path, so without this an
                 unknown URL renders an empty <main> that looks broken. Catches "/" too. */}
