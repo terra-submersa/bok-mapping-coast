@@ -164,6 +164,102 @@ body,
   color: var(--panel-fg);
 }
 
+/*
+ * The armed tool's readout (issue #53).
+ *
+ * Bottom-right is the only free corner: the sidebar owns the left at 300 px and may run
+ * the full height, MapLibre's NavigationControl owns the top-right, and the 32 px bottom
+ * offset lifts it clear of the attribution bar. Same `z-index` as the sidebar — they
+ * cannot overlap, so neither needs to win.
+ */
+.map-card {
+  position: absolute;
+  right: 12px;
+  bottom: 32px;
+  z-index: 1;
+  width: 240px;
+  background: var(--panel-bg);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--panel-fg);
+}
+
+.map-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--panel-accent);
+  color: #ffffff;
+}
+
+.map-card-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.map-card-header button {
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-card-header button:hover {
+  background: rgb(255 255 255 / 20%);
+}
+
+.map-card-body {
+  padding: 10px 12px 12px;
+}
+
+.map-card-prompt {
+  margin: 0;
+  color: var(--panel-muted);
+}
+
+/* The answer, sized so it is readable without leaning in. */
+.map-card-figure {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-card-body dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+}
+
+.map-card-body dt {
+  color: var(--panel-muted);
+}
+
+.map-card-body dd {
+  margin: 0;
+  /* Coordinates and bearings are columns of digits; proportional figures make them
+     impossible to compare down the list. */
+  font-variant-numeric: tabular-nums;
+}
+
+.map-card-hint {
+  margin: 10px 0 0;
+  color: var(--panel-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .panel {
   background: var(--panel-bg);
   border-radius: 8px;

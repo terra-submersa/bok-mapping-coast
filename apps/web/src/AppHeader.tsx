@@ -1,5 +1,6 @@
 import { NavLink } from "react-router";
 import { ContourMenu } from "./ContourMenu.js";
+import { ToolsMenu } from "./ToolsMenu.js";
 
 /**
  * Provisional working name — invented so the banner has something to display,
@@ -27,6 +28,9 @@ const SECTIONS = [
  * The depth contour menu is the first of those (issue #51). It sits here rather than in
  * a sidebar because the lines are a way of *looking* at the seabed, as useful while
  * trimming the AOI on Area or judging a sounding on Calibrate as on Boundary.
+ *
+ * The tools menu joined it for the same reason (issue #53): measuring a distance or
+ * reading a grid reference interrogates the map, not any one planning step.
  */
 export function AppHeader() {
   return (
@@ -40,6 +44,7 @@ export function AppHeader() {
         ))}
       </nav>
       <ContourMenu />
+      <ToolsMenu />
     </header>
   );
 }

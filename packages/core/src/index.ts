@@ -64,6 +64,7 @@ export {
   ratioToDepth,
   residuals,
 } from "./depth-fit.js";
+export { type GeodesicLine, geodesicInverse } from "./geodesy.js";
 export { unionPolygons } from "./merge.js";
 export { interiorRings, type Polygonal, toMultiPolygon } from "./polygonal.js";
 export {

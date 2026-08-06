@@ -32,6 +32,8 @@ import {
 import { resetDraw } from "./draw-lifecycle.js";
 import { formatDepthM } from "./format.js";
 import { useProject } from "./ProjectContext.js";
+import { ToolCard } from "./ToolCard.js";
+import { type ActiveTool, useTool } from "./ToolContext.js";
 import { useDepthContours } from "./useDepthContours.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -48,6 +50,15 @@ const ZONES_SOURCE_ID = "zones";
 const INCLUSIONS_SOURCE_ID = "inclusions";
 const CONTOURS_SOURCE_ID = "depth-contours";
 const SOUNDINGS_SOURCE_ID = "soundings";
+const TOOLS_SOURCE_ID = "tools";
+
+/**
+ * Violet, because it is the one hue not already meaning something: blue is the AOI, amber
+ * the candidate rings, green the boundary, red an exclusion, teal an inclusion, white a
+ * sounding, and the depth ramp owns the contour lines. It also holds up over both dark
+ * Posidonia and blown-out sand, which is the whole span of this basemap.
+ */
+const TOOL_COLOUR = "#e040fb";
 
 /**
  * How close a shift-click has to land to count as "on" a vertex. A screen distance,
@@ -192,6 +203,52 @@ function contoursFeatureCollection(
   };
 }
 
+/**
+ * Whatever the armed tool has collected, as one source feeding three layers (issue #53).
+ *
+ * Points and the segment joining them share a source because they are one overlay that
+ * appears and disappears together; the layers filter on geometry type. Same shape as the
+ * contour and sounding sources, so a single `setData` keeps all three in step.
+ */
+function toolsFeatureCollection(
+  measurePoints: readonly GeoJSON.Position[],
+  utmPoint: GeoJSON.Position | null,
+): GeoJSON.FeatureCollection<GeoJSON.Point | GeoJSON.LineString, { label: string }> {
+  const features: GeoJSON.Feature<GeoJSON.Point | GeoJSON.LineString, { label: string }>[] = [];
+
+  measurePoints.forEach((position, index) => {
+    features.push({
+      type: "Feature",
+      // A and B rather than 1 and 2: the card names them that way, and a bearing is read
+      // as "A to B".
+      properties: { label: index === 0 ? "A" : "B" },
+      geometry: { type: "Point", coordinates: position },
+    });
+  });
+
+  // A straight line between the two, which is what a geodesic this short is to within a
+  // pixel. Over hundreds of kilometres it would visibly bow away from the true path — not
+  // a case two clicks on one map view can reach, but the reason this is a rendering
+  // convenience and not the thing being measured.
+  if (measurePoints.length === 2) {
+    features.push({
+      type: "Feature",
+      properties: { label: "" },
+      geometry: { type: "LineString", coordinates: [...measurePoints] },
+    });
+  }
+
+  if (utmPoint) {
+    features.push({
+      type: "Feature",
+      properties: { label: "" },
+      geometry: { type: "Point", coordinates: utmPoint },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
+}
+
 function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   if (!aoi) return emptyFeatureCollection();
   return {
@@ -287,6 +344,7 @@ function MapSurface() {
     excludedSoundingIds,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
+  const { activeTool, setActiveTool, measurePoints, utmPoint, pushToolPoint } = useTool();
   // The one call site. Deliberately not part of `useBoundary`: these lines read the
   // seabed and must not move with the threshold, the zones or the export settings.
   const { plan: contourPlan, lines: contourLines } = useDepthContours();
@@ -300,6 +358,19 @@ function MapSurface() {
   const editedFeatureRef = useRef<string | number | undefined>(undefined);
   const drawTargetRef = useRef<DrawTarget | null>(drawTarget);
   const isDroppingSoundingRef = useRef(isDroppingSounding);
+  /**
+   * The armed tool, for the handlers registered once at mount. `pushToolPoint` goes in a
+   * ref too: it is rebuilt whenever `activeTool` changes, and the mount-time closure would
+   * otherwise keep calling the very first one, which believed no tool was armed.
+   */
+  const activeToolRef = useRef<ActiveTool>(activeTool);
+  const pushToolPointRef = useRef(pushToolPoint);
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
+  useEffect(() => {
+    pushToolPointRef.current = pushToolPoint;
+  }, [pushToolPoint]);
   useEffect(() => {
     isDroppingSoundingRef.current = isDroppingSounding;
   }, [isDroppingSounding]);
@@ -627,6 +698,61 @@ function MapSurface() {
         },
       });
 
+      /**
+       * The armed tool's overlay (issue #53).
+       *
+       * Above the soundings, which is the one layer that claims nothing may cover it. The
+       * exception is deliberate and narrow: a tool overlay exists only while you are
+       * actively pointing at something with it, and it is one click from gone, so it is
+       * never what is quietly hiding a measurement from you.
+       */
+      map.addSource(TOOLS_SOURCE_ID, {
+        type: "geojson",
+        data: toolsFeatureCollection([], null),
+      });
+      map.addLayer({
+        id: "tools-line",
+        type: "line",
+        source: TOOLS_SOURCE_ID,
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: {
+          "line-color": TOOL_COLOUR,
+          "line-width": 2,
+          // Dashed, so it reads as an annotation rather than as one more derived boundary.
+          "line-dasharray": [3, 2],
+        },
+      });
+      map.addLayer({
+        id: "tools-point",
+        type: "circle",
+        source: TOOLS_SOURCE_ID,
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 5,
+          "circle-color": TOOL_COLOUR,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+        },
+      });
+      map.addLayer({
+        id: "tools-label",
+        type: "symbol",
+        source: TOOLS_SOURCE_ID,
+        filter: ["==", ["geometry-type"], "Point"],
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          "text-offset": [0, -1.2],
+          // Two labels at most, and both matter — the collider gets no say.
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "#4a148c",
+          "text-halo-width": 1.5,
+        },
+      });
+
       map.on("mouseenter", "rings-fill", () => {
         map.getCanvas().style.cursor = "pointer";
       });
@@ -634,8 +760,9 @@ function MapSurface() {
         map.getCanvas().style.cursor = "";
       });
       map.on("click", "rings-fill", (e) => {
-        // A click meant to place a reference point must not also reselect a ring under it.
-        if (isDrawingRef.current || isDroppingSoundingRef.current) return;
+        // A click meant to place a reference point, or to feed a tool, must not also
+        // reselect a ring under it.
+        if (isDrawingRef.current || isDroppingSoundingRef.current || activeToolRef.current) return;
         const point: GeoJSON.Position = [e.lngLat.lng, e.lngLat.lat];
         const match = findRingContaining(ringsRef.current, point);
         if (match) {
@@ -656,6 +783,18 @@ function MapSurface() {
         if (!isDroppingSoundingRef.current) return;
         setDroppedPoint({ lon: e.lngLat.lng, lat: e.lngLat.lat });
         setIsDroppingSounding(false);
+      });
+
+      /**
+       * Click to feed the armed tool (issue #53).
+       *
+       * Arming a tool cancels drawing, reshaping and the sounding drop, and each of those
+       * disarms the tool — so this handler and the one above can never both fire on the
+       * same click. The guard is belt and braces for a state neither should reach.
+       */
+      map.on("click", (e) => {
+        if (!activeToolRef.current || isDroppingSoundingRef.current) return;
+        pushToolPointRef.current([e.lngLat.lng, e.lngLat.lat]);
       });
 
       /**
@@ -746,12 +885,38 @@ function MapSurface() {
     source?.setData(soundingsFeatureCollection(soundings, excludedSoundingIds));
   }, [overlaysReady, soundings, excludedSoundingIds]);
 
-  // A crosshair while the next click will place a reference point. Without it the mode
-  // is invisible on the map and only the sidebar button says anything is armed.
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(TOOLS_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(toolsFeatureCollection(measurePoints, utmPoint));
+  }, [overlaysReady, measurePoints, utmPoint]);
+
+  // A crosshair while the next click will place a reference point or feed a tool. Without
+  // it the mode is invisible on the map and only the banner says anything is armed.
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
-    if (canvas) canvas.style.cursor = isDroppingSounding ? "crosshair" : "";
-  }, [isDroppingSounding]);
+    if (canvas) canvas.style.cursor = isDroppingSounding || activeTool ? "crosshair" : "";
+  }, [isDroppingSounding, activeTool]);
+
+  /**
+   * Arming a tool takes the next click away from every other gesture (issue #53).
+   *
+   * An effect rather than a call in `ToolsMenu`, because the menu lives in the banner and
+   * has no way to reach terra-draw. The other half of the exclusion — a gesture disarming
+   * the tool — is `releaseTool` below, which the `controls` entry points call.
+   *
+   * Without this, arming Measure mid-draw leaves terra-draw's polygon mode live, and one
+   * click both drops a corner and takes a measurement.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on the arming edge only; leaveEditing is redefined every render and depending on it would re-cancel on each one
+  useEffect(() => {
+    if (!activeTool) return;
+    resetDraw(drawRef.current);
+    setIsDrawing(false);
+    setDrawTarget(null);
+    setIsDroppingSounding(false);
+    leaveEditing();
+  }, [activeTool, setIsDrawing]);
 
   // Dropping the composite has to take its layer with it, or a stale depth ramp stays
   // painted over an AOI it no longer belongs to — the bug issue #2's closing note is about.
@@ -782,10 +947,27 @@ function MapSurface() {
     setEditError(null);
   }
 
+  /**
+   * Disarms a tool so a drawing gesture can have the click (issue #53).
+   *
+   * Four things now want the next map click — drawing, reshaping, dropping a sounding, and
+   * an armed tool — and exactly one may have it. `startDropSounding` already cancelled the
+   * first two; the tool is the fourth, and every entry point into a gesture has to
+   * surrender it, or a click both places a polygon corner and moves a measurement.
+   *
+   * The reverse direction — arming a tool cancelling the gestures — is the effect above,
+   * not a call from `ToolsMenu`: the menu is in the banner, outside this component, and
+   * cannot reach terra-draw.
+   */
+  function releaseTool() {
+    if (activeTool) setActiveTool(null);
+  }
+
   const controls: MapContextValue = {
     startDraw: (target: DrawTarget) => {
       const draw = drawRef.current;
       if (!draw) return;
+      releaseTool();
       leaveEditing();
       drawTargetRef.current = target;
       setDrawTarget(target);
@@ -807,6 +989,7 @@ function MapSurface() {
     startEdit: () => {
       const draw = drawRef.current;
       if (!draw || !aoi) return;
+      releaseTool();
       draw.start();
       draw.setMode("select");
       draw.clear();
@@ -825,7 +1008,8 @@ function MapSurface() {
     editError,
     isDroppingSounding,
     startDropSounding: () => {
-      // Both other gestures own the next click, so neither may be live alongside this.
+      // Every other gesture owns the next click, so none may be live alongside this.
+      releaseTool();
       resetDraw(drawRef.current);
       setIsDrawing(false);
       setDrawTarget(null);
@@ -846,6 +1030,9 @@ function MapSurface() {
           <Outlet />
         </MapContext.Provider>
       </div>
+      {/* Outside the sidebar, so it is the same readout on every step and the step's own
+          panels never push it around. */}
+      <ToolCard />
     </div>
   );
 }
