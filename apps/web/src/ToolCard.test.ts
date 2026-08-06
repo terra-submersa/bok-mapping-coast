@@ -1,5 +1,12 @@
+import { lonLatToUtm } from "@bok/core";
 import { describe, expect, it } from "vitest";
-import { formatBearingDeg, formatDistanceM, formatLonLat } from "./format.js";
+import {
+  formatBearingDeg,
+  formatDistanceM,
+  formatLonLat,
+  formatUtmMetres,
+  formatUtmZone,
+} from "./format.js";
 import { toolPrompt } from "./ToolCard.js";
 
 describe("toolPrompt", () => {
@@ -64,5 +71,36 @@ describe("formatLonLat", () => {
   it("prints latitude before longitude, at about a metre", () => {
     expect(formatLonLat([23.1225, 37.4265])).toBe("37.42650, 23.12250");
     expect(formatLonLat([-179.5, -33.8688])).toBe("-33.86880, -179.50000");
+  });
+});
+
+describe("formatUtmZone", () => {
+  it("writes the grid zone designator as MGRS does", () => {
+    expect(formatUtmZone(lonLatToUtm(23.1225, 37.4265))).toBe("34S");
+    expect(formatUtmZone(lonLatToUtm(151.2093, -33.8688))).toBe("56H");
+  });
+
+  /**
+   * Kiladha is "34S" and northern. The card prints the EPSG code beside this string for
+   * exactly that reason — the designator alone cannot say which hemisphere it means.
+   */
+  it("is a band letter, not a hemisphere", () => {
+    const kiladha = lonLatToUtm(23.1225, 37.4265);
+    expect(formatUtmZone(kiladha)).toBe("34S");
+    expect(kiladha.hemisphere).toBe("N");
+  });
+});
+
+describe("formatUtmMetres", () => {
+  it("rounds to the metre and groups thousands without a comma", () => {
+    expect(formatUtmMetres(687802.998972)).toBe("687 803 m");
+    expect(formatUtmMetres(4144301.721762)).toBe("4 144 302 m");
+    expect(formatUtmMetres(0)).toBe("0 m");
+    expect(formatUtmMetres(500000)).toBe("500 000 m");
+  });
+
+  /** No comma, so a copied northing does not become two CSV fields. */
+  it("never emits a comma", () => {
+    expect(formatUtmMetres(8663320.2)).not.toMatch(/,/);
   });
 });

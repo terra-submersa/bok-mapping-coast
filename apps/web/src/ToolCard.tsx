@@ -1,5 +1,11 @@
-import { geodesicInverse } from "@bok/core";
-import { formatBearingDeg, formatDistanceM, formatLonLat } from "./format.js";
+import { geodesicInverse, lonLatToUtm } from "@bok/core";
+import {
+  formatBearingDeg,
+  formatDistanceM,
+  formatLonLat,
+  formatUtmMetres,
+  formatUtmZone,
+} from "./format.js";
 import { type ActiveTool, useTool } from "./ToolContext.js";
 
 /**
@@ -36,6 +42,7 @@ export function ToolCard() {
   const prompt = toolPrompt(activeTool, measurePoints, utmPoint);
   const [a, b] = measurePoints;
   const line = activeTool === "measure" && a && b ? geodesicInverse(a, b) : null;
+  const utm = activeTool === "utm" && utmPoint ? lonLatToUtm(utmPoint[0], utmPoint[1]) : null;
 
   return (
     <div className="map-card">
@@ -70,6 +77,35 @@ export function ToolCard() {
             <p className="map-card-hint">
               WGS 84 geodesic. Bearings are true, from geographic north — the same convention as
               Pilot 2's course angle.
+            </p>
+          </>
+        )}
+
+        {utm && utmPoint && (
+          <>
+            <p className="map-card-figure">{formatUtmZone(utm)}</p>
+            <dl>
+              <dt>East</dt>
+              <dd>{formatUtmMetres(utm.eastingM)}</dd>
+              <dt>North</dt>
+              <dd>{formatUtmMetres(utm.northingM)}</dd>
+              {/*
+               * Spelled out beside the grid zone designator, because "34S" is ambiguous on
+               * its own: it is band S here, which is 32–40° *north*, and it is also how a
+               * CRS name would write zone 34 south. The EPSG code is the half of the pair
+               * that cannot be misread.
+               */}
+              <dt>CRS</dt>
+              <dd>
+                EPSG:{utm.epsg} ({utm.zone}
+                {utm.hemisphere})
+              </dd>
+              <dt>Lat, lon</dt>
+              <dd>{formatLonLat(utmPoint)}</dd>
+            </dl>
+            <p className="map-card-hint">
+              WGS 84 / UTM, to the metre — which is the precision of the click, not of the
+              projection.
             </p>
           </>
         )}

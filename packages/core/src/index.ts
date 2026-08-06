@@ -98,4 +98,5 @@ export {
 } from "./sounding.js";
 export { formatSoundingCsv, parseSoundingCsv } from "./sounding-csv.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
+export { latitudeBand, lonLatToUtm, type UtmCoordinate, utmZone } from "./utm.js";
 export { addZones, subtractZones } from "./zones.js";

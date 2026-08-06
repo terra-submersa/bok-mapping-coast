@@ -1,3 +1,5 @@
+import type { UtmCoordinate } from "@bok/core";
+
 /** Square metres as km² above 1 hectare, metres² below — matches the scale a
  * Planner is actually judging (a whole bay vs. a offshore noise fragment). */
 export function formatAreaM2(areaM2: number): string {
@@ -36,4 +38,30 @@ export function formatBearingDeg(bearingDeg: number): string {
 export function formatLonLat(position: GeoJSON.Position): string {
   const [lon, lat] = position;
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+/**
+ * A UTM grid zone designator: zone number and latitude band, as MGRS writes it (issue #54).
+ *
+ * The band, not the hemisphere. "34S" here means band S, which is 32–40°**N** — the same
+ * string a CRS name would use for zone 34 *south*. That is exactly why `formatUtmMetres`
+ * prints the EPSG code beside it rather than leaving the reader to guess.
+ */
+export function formatUtmZone(utm: UtmCoordinate): string {
+  return `${utm.zone}${utm.band}`;
+}
+
+/**
+ * An easting or a northing, to the whole metre, space-grouped in thousands.
+ *
+ * Whole metres because one screen pixel at the working zoom is several metres wide, so a
+ * decimal would be quoting the projection's precision rather than the click's. Spaces
+ * rather than commas, so a copied northing does not become two fields in a CSV.
+ *
+ * Grouped by hand rather than with `toLocaleString`, which yields a narrow no-break space
+ * under some ICU versions and a comma under others — the separator would otherwise depend
+ * on which Node or browser happened to run it.
+ */
+export function formatUtmMetres(metres: number): string {
+  return `${String(Math.round(metres)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} m`;
 }
