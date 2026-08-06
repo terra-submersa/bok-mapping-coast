@@ -5,6 +5,7 @@ import {
 } from "@bok/core";
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
+import { useCalibrationState } from "./CalibrationContext.js";
 import { formatDepthM } from "./format.js";
 import { useProject } from "./ProjectContext.js";
 import { useContourPlan } from "./useDepthContours.js";
@@ -66,6 +67,7 @@ export function contourMenuNote(
  */
 export function ContourMenu() {
   const { contourIntervalM, setContourIntervalM, composite } = useProject();
+  const { fit } = useCalibrationState();
   const plan = useContourPlan();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -198,6 +200,18 @@ export function ContourMenu() {
                   </NavLink>
                 </>
               )}
+            </p>
+          )}
+          {/*
+           * Said every time the lines are on, not tucked into a tooltip. They trace a
+           * *blurred* ratio field — which is what makes a noisy SDB raster legible, and
+           * which means a contour reads the seabed's shape rather than measuring where a
+           * depth is. Nothing may be measured off them.
+           */}
+          {enabled && contourIntervalM > 0 && (
+            <p className="header-menu-note">
+              Shape, not measurement: the lines trace a smoothed ratio field.
+              {fit && ` The fit itself is ±${fit.rmseM.toFixed(2)} m over ${fit.n} points.`}
             </p>
           )}
         </div>

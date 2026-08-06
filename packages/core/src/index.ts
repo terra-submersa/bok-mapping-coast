@@ -44,6 +44,7 @@ export {
 } from "./contour.js";
 export { decimateGrid, MAX_CONTOUR_SIDE } from "./decimate.js";
 export {
+  DEFAULT_CONTOUR_SMOOTH_RADIUS_PX,
   DEPTH_CONTOUR_INTERVALS_M,
   type DepthContourLevel,
   type DepthContourLine,

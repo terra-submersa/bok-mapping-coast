@@ -260,6 +260,45 @@ describe("depthContourLines", () => {
     ).toEqual([]);
   });
 
+  it("smooths away speckle without moving the coastline", () => {
+    // Water on the left, land on the right, and a ramp with one noisy pixel in it.
+    const width = 20;
+    const height = 20;
+    const base = grid(width, height, (x) => 1 + 0.05 * x);
+    const ratio = (base.ratio as number[]).slice();
+    // One spuriously deep pixel well inside the shallow side: on its own it contours as
+    // a hole, which is a ring, which is a fragment.
+    ratio[8 * width + 2] = 3;
+    const sceneCount = (base.sceneCount as number[]).map((_, i) => (i % width < 15 ? 10 : 0));
+    const noisy = { ...base, ratio, sceneCount };
+    const level = [{ depthM: 5, ratio: 1.28 }];
+
+    const raw = depthContourLines(noisy, level)[0];
+    const smoothed = depthContourLines(noisy, level, { smoothRadius: 2 })[0];
+
+    // The speck contours as its own closed ring; blurring absorbs it.
+    expect(raw.geometry.coordinates.length).toBeGreaterThan(smoothed.geometry.coordinates.length);
+    // The coastline sits at lon 15 and the blur must not have reached past it, in either
+    // direction — `live` is not smoothed, only the depths are.
+    for (const [lon] of positions(smoothed)) expect(lon).toBeLessThan(15);
+    expect(positions(smoothed).length).toBeGreaterThan(0);
+  });
+
+  it("never averages a masked cell into the water beside it", () => {
+    // Land carries ratio 0, which would read as the shallowest water there is. If the
+    // blur picked it up, the levels near shore would bend towards the beach.
+    const width = 12;
+    const height = 12;
+    const base = grid(width, height, (x) => (x < 6 ? 1.25 : 0));
+    const sceneCount = (base.sceneCount as number[]).map((_, i) => (i % width < 6 ? 10 : 0));
+    const lines = depthContourLines({ ...base, sceneCount }, [{ depthM: 3, ratio: 1.3 }], {
+      smoothRadius: 3,
+    });
+    // Every water pixel is 1.25, so a level at 1.3 encloses all of it and its only edge
+    // is the mask. A blur that leaked land in would break the uniformity and draw a line.
+    expect(lines[0].geometry.coordinates).toEqual([]);
+  });
+
   it("leaves the input grid untouched", () => {
     const ramp = eastwardRamp();
     const ratio = [...(ramp.ratio as number[])];

@@ -111,9 +111,30 @@ export interface DepthContourLine {
   geometry: GeoJSON.MultiLineString;
 }
 
+/**
+ * Box-blur radius, in pixels, that makes a contour of this raster legible.
+ *
+ * Measured on a real Kiladha composite, one level, decimated to 953×890: unsmoothed the
+ * level breaks into ~800 fragments and takes ~810 ms; at radius 2 it is ~126 fragments
+ * and ~28 ms. Both halves of that matter and the first is the important one — 800
+ * fragments is a hairball, not a contour map.
+ *
+ * The speed is a consequence rather than the goal. d3's `contour` assigns each hole to a
+ * polygon by scanning every polygon, which is quadratic in ring count, so pixel noise
+ * costs far more than pixels do. Smoothing removes the rings; the marching squares was
+ * never the expensive part.
+ */
+export const DEFAULT_CONTOUR_SMOOTH_RADIUS_PX = 2;
+
 export interface DepthContourOptions extends ContourOptions {
   /** Applied as a pixel mask before contouring, not as a polygon clip. See below. */
   aoi?: Polygonal;
+  /**
+   * Box-blur radius in pixels applied to the ratio before contouring. 0 disables.
+   * `DEFAULT_CONTOUR_SMOOTH_RADIUS_PX` explains why anything drawing a real composite
+   * wants this on.
+   */
+  smoothRadius?: number;
   /** Douglas-Peucker tolerance in metres. 0 disables. */
   simplifyMetres?: number;
   /** Fragments shorter than this are dropped as speckle. The line analogue of MIN_RING_AREA_M2. */
@@ -140,11 +161,25 @@ export interface DepthContourOptions extends ContourOptions {
  * A pleasant consequence: band nesting (1 m ⊂ 2 m ⊂ …) and the holes d3 assigns stop
  * mattering entirely, because a hole is just another ring once every ring is a
  * polyline.
+ *
+ * ## Smoothed, and it has to be said out loud
+ *
+ * With `smoothRadius` on, these lines trace a blurred ratio field. That is ordinary
+ * cartographic practice for a noisy surface and it is what makes the result readable —
+ * but it means a contour is a *reading of the seabed's shape*, not a measurement of
+ * where a depth is. Nothing may be measured off it, which is exactly why nothing
+ * downstream consumes it.
  */
 export function depthContourLines(
   grid: RatioGrid,
   levels: readonly DepthContourLevel[],
-  { minSceneCount = 1, aoi, simplifyMetres = 0, minLengthM = 0 }: DepthContourOptions = {},
+  {
+    minSceneCount = 1,
+    aoi,
+    smoothRadius = 0,
+    simplifyMetres = 0,
+    minLengthM = 0,
+  }: DepthContourOptions = {},
 ): DepthContourLine[] {
   if (levels.length === 0) return [];
 
@@ -152,7 +187,7 @@ export function depthContourLines(
   const inside = aoi ? aoiMask(grid, aoi) : null;
 
   const live = new Uint8Array(width * height);
-  const field = new Float64Array(width * height);
+  let field: Float64Array = new Float64Array(width * height);
   for (let i = 0; i < field.length; i++) {
     // Same predicate as `shallowWaterContour`, so the two agree about where water is —
     // including the issue #44 rule that a non-finite ratio is excluded alongside land.
@@ -161,6 +196,10 @@ export function depthContourLines(
     live[i] = water ? 1 : 0;
     field[i] = water ? -ratio[i] : EXCLUDED;
   }
+  // `live` is deliberately not blurred: smoothing changes the depths, never where the
+  // water is. The coastline therefore stays exactly where `shallowWaterContour` puts it,
+  // and the mask-boundary runs are still cut in the same places.
+  if (smoothRadius > 0) field = blurLive(field, live, width, height, smoothRadius);
 
   /*
    * An explicit loop, deliberately. d3-contour's plural `contours(values)` is
@@ -192,6 +231,49 @@ export function depthContourLines(
       geometry: simplifyLines({ type: "MultiLineString", coordinates: kept }, simplifyMetres),
     };
   });
+}
+
+/**
+ * Box blur over live cells only.
+ *
+ * Averaging a masked cell in would drag the sentinel — or a land pixel's ratio of 0 —
+ * into the water beside it and bend every level towards the shore. Cells that are not
+ * live keep their sentinel untouched, so the mask is bit-identical afterwards.
+ */
+function blurLive(
+  field: Float64Array,
+  live: Uint8Array,
+  width: number,
+  height: number,
+  radius: number,
+): Float64Array {
+  const out = new Float64Array(field.length);
+  for (let y = 0; y < height; y++) {
+    const top = Math.max(0, y - radius);
+    const bottom = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      if (live[index] === 0) {
+        out[index] = field[index];
+        continue;
+      }
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width - 1, x + radius);
+      let sum = 0;
+      let count = 0;
+      for (let yy = top; yy <= bottom; yy++) {
+        const row = yy * width;
+        for (let xx = left; xx <= right; xx++) {
+          if (live[row + xx] === 1) {
+            sum += field[row + xx];
+            count++;
+          }
+        }
+      }
+      out[index] = sum / count;
+    }
+  }
+  return out;
 }
 
 /**

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CONTOUR_SMOOTH_RADIUS_PX,
   type DepthContourLine,
   type DepthContourPlan,
   decimateGrid,
@@ -30,8 +31,11 @@ const CONTOUR_SIMPLIFY_M = 10;
  * Fragments shorter than this are speckle. Noise that is invisible in one contour is
  * forty times more visible in forty of them, and this is the control for it — not a
  * scene-count floor that would disagree with `shallowWaterContour` about where water is.
+ *
+ * Roughly ten pixels of a decimated composite: below that a "contour" is a couple of
+ * cells that happened to fall the same side of a threshold.
  */
-const MIN_CONTOUR_LENGTH_M = 50;
+const MIN_CONTOUR_LENGTH_M = 200;
 
 /**
  * Which depths get a line — pure arithmetic over the fit and the composite's ratio range.
@@ -68,6 +72,7 @@ export function useDepthContours(): DepthContourState {
     if (!grid || plan.levels.length === 0) return [];
     return depthContourLines(grid, plan.levels, {
       aoi: aoi ?? undefined,
+      smoothRadius: DEFAULT_CONTOUR_SMOOTH_RADIUS_PX,
       simplifyMetres: CONTOUR_SIMPLIFY_M,
       minLengthM: MIN_CONTOUR_LENGTH_M,
     });
