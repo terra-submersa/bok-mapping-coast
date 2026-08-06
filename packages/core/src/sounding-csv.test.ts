@@ -27,7 +27,7 @@ describe("parseSoundingCsv", () => {
     const soundings = parseSoundingCsv(ARGOLID);
     expect(soundings).toHaveLength(14);
     expect(soundings[0]).toMatchObject({
-      id: "bathy-0001",
+      id: "bathy-0001-n37315727-e23152003",
       name: "Bathy 0001",
       depthM: 0.6,
       measuredAt: null,
@@ -77,6 +77,25 @@ describe("parseSoundingCsv", () => {
     expect(parseSoundingCsv(csv)[0].note).toBe("sand, then weed");
   });
 
+  it("keeps two surveys that both number from one, rather than folding them together", () => {
+    // The second file of issue #52, appended to the first: same names, 15 km away.
+    const both = [
+      ARGOLID,
+      "Bathy 0001,23.3216889,37.404918,1.4",
+      "Bathy 0002,23.321855,37.4047529,1.9",
+    ].join("\n");
+    const soundings = parseSoundingCsv(both);
+    expect(soundings).toHaveLength(16);
+    expect(new Set(soundings.map((s) => s.id)).size).toBe(16);
+  });
+
+  it("rejects one file claiming two depths at one place, naming both lines", () => {
+    const repeated = `${ARGOLID}\nBathy 0001,23.15200319,37.31572657,1.9`;
+    expect(() => parseSoundingCsv(repeated)).toThrow(
+      /Line 16: "Bathy 0001" repeats the name and position of line 2/,
+    );
+  });
+
   it("names the line that failed, not merely that one did", () => {
     const broken = ARGOLID.replace("Bathy 0003,23.15157336,37.31598138,1.3", "Bathy 0003,x,y,1.3");
     expect(() => parseSoundingCsv(broken)).toThrow(/Line 4:/);
@@ -113,6 +132,11 @@ describe("formatSoundingCsv", () => {
       'name,lon,lat,depth,note\nBathy 0001,23.152,37.3157,0.6,"sand, then weed"',
     );
     expect(parseSoundingCsv(formatSoundingCsv(original))[0].note).toBe("sand, then weed");
+  });
+
+  it("writes the id unquoted — it is deliberately free of commas and quotes", () => {
+    const csv = formatSoundingCsv(parseSoundingCsv(ARGOLID));
+    expect(csv.split("\n")[1].startsWith("bathy-0001-n37315727-e23152003,Bathy 0001,")).toBe(true);
   });
 
   it("emits a header even with nothing to export", () => {

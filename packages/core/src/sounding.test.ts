@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSounding, parseSoundings } from "./sounding.js";
+import { parseSounding, parseSoundings, soundingId } from "./sounding.js";
 
 /** The first row of the real Argolid survey, 2026-08-04. */
 function valid() {
@@ -20,8 +20,8 @@ describe("parseSounding", () => {
     expect(parsed.measuredAt).toBe("2026-08-04T08:25:38Z");
   });
 
-  it("derives a stable id from the name, so re-importing the same CSV is idempotent", () => {
-    expect(parseSounding(valid()).id).toBe("bathy-0001");
+  it("derives a stable id from the name and position, so re-importing a CSV is idempotent", () => {
+    expect(parseSounding(valid()).id).toBe("bathy-0001-n37315727-e23152003");
     expect(parseSounding(valid()).id).toBe(parseSounding(valid()).id);
   });
 
@@ -68,6 +68,49 @@ describe("parseSounding", () => {
 
   it("names the sounding in every message, since they arrive fourteen at a time", () => {
     expect(() => parseSounding({ ...valid(), depthM: Number.NaN })).toThrow(/Bathy 0001/);
+  });
+});
+
+describe("soundingId", () => {
+  it("separates two surveys that both start at Bathy 0001 (issue #52)", () => {
+    // The overwrite that prompted this: Kiladha and the northern cluster, 15 km apart,
+    // both numbered from one. Under the old name-only id the second import destroyed the
+    // first six readings of the first, silently.
+    const kiladha = soundingId("Bathy 0001", 23.15200319, 37.31572657);
+    const northern = soundingId("Bathy 0001", 23.3216889, 37.404918);
+    expect(kiladha).not.toBe(northern);
+  });
+
+  it("gives the same id to the same name at the same place, so a re-import corrects", () => {
+    expect(soundingId("Bathy 0001", 23.15200319, 37.31572657)).toBe(
+      soundingId("Bathy 0001", 23.15200319, 37.31572657),
+    );
+  });
+
+  it("ignores float noise below ~0.11 m, so a re-exported CSV does not invent a point", () => {
+    expect(soundingId("Bathy 0001", 23.152003191, 37.315726571)).toBe(
+      soundingId("Bathy 0001", 23.15200319, 37.31572657),
+    );
+  });
+
+  it("stays a legal path segment — the id is the :id in /api/soundings/:id", () => {
+    // Including for a southern, western position, where a minus sign would have produced
+    // a double dash and a leading-dash slug.
+    for (const id of [
+      soundingId("Bathy 0001", 23.15200319, 37.31572657),
+      soundingId("Récif d'Été #3", -70.123456, -33.987654),
+    ]) {
+      expect(id).toMatch(/^[a-z0-9-]+$/);
+      expect(encodeURIComponent(id)).toBe(id);
+      expect(id).not.toContain("--");
+    }
+  });
+
+  it("keeps the coordinates legible, which is how the overwrite was diagnosed", () => {
+    expect(soundingId("Bathy 0001", 23.15200319, 37.31572657)).toBe(
+      "bathy-0001-n37315727-e23152003",
+    );
+    expect(soundingId("Bathy 0001", -70.123456, -33.987654)).toBe("bathy-0001-s33987654-w70123456");
   });
 });
 

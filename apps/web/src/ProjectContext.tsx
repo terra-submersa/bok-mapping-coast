@@ -35,6 +35,7 @@ import {
   deleteSounding as deleteSoundingRequest,
   importSoundingCsv,
   listSoundings,
+  type SoundingImport,
   saveSounding,
 } from "./soundings.js";
 import {
@@ -151,7 +152,8 @@ export interface ProjectContextValue {
   refreshSoundings: () => Promise<void>;
   addSounding: (sounding: Sounding) => Promise<void>;
   removeSounding: (id: string) => Promise<void>;
-  importSoundings: (csv: string) => Promise<void>;
+  /** Resolves to what the import did, or to null when it failed and `soundingError` says why. */
+  importSoundings: (csv: string) => Promise<SoundingImport | null>;
 
   /**
    * Soundings the Planner has kept out of the fit (issue #12; persisted in #13).
@@ -449,11 +451,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const importSoundings = useCallback(
     async (csv: string) => {
       try {
-        await importSoundingCsv(csv);
+        const result = await importSoundingCsv(csv);
         setSoundingError(null);
         await refreshSoundings();
+        return result;
       } catch (err) {
         setSoundingError(err instanceof Error ? err.message : "Could not import the soundings.");
+        return null;
       }
     },
     [refreshSoundings],

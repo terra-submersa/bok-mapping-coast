@@ -24,14 +24,25 @@ export async function saveSounding(sounding: Sounding): Promise<Sounding> {
   ])[0];
 }
 
+/** What an import did — the part the table cannot show you afterwards (issue #52). */
+export interface SoundingImport {
+  soundings: Sounding[];
+  added: number;
+  updated: number;
+}
+
 /** Bulk upsert from a pasted or uploaded CSV. Returns what the server stored. */
-export async function importSoundingCsv(csv: string): Promise<Sounding[]> {
-  const { soundings } = await request<{ soundings: unknown }>("/api/soundings", {
+export async function importSoundingCsv(csv: string): Promise<SoundingImport> {
+  const { soundings, added, updated } = await request<{
+    soundings: unknown;
+    added: number;
+    updated: number;
+  }>("/api/soundings", {
     method: "POST",
     headers: { "Content-Type": "text/csv" },
     body: csv,
   });
-  return parseSoundings(soundings);
+  return { soundings: parseSoundings(soundings), added, updated };
 }
 
 export async function deleteSounding(id: string): Promise<void> {

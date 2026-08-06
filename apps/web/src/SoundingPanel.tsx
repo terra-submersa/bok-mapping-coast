@@ -1,12 +1,12 @@
 import type { Sounding } from "@bok/core";
 import { useRef, useState } from "react";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import { SOUNDING_CSV_URL } from "./soundings.js";
+import { SOUNDING_CSV_URL, type SoundingImport } from "./soundings.js";
 
 export interface SoundingPanelProps {
   soundings: Sounding[];
   error: string | null;
-  onImport: (csv: string) => Promise<void>;
+  onImport: (csv: string) => Promise<SoundingImport | null>;
   onRemove: (id: string) => Promise<void>;
 }
 
@@ -24,12 +24,23 @@ export interface SoundingPanelProps {
 export function SoundingPanel({ soundings, error, onImport, onRemove }: SoundingPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<string | null>(null);
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setBusy(true);
+    setReport(null);
     try {
-      await onImport(await file.text());
+      const result = await onImport(await file.text());
+      // Named out loud, because "added" and "updated" is precisely what the table cannot
+      // tell you afterwards — and a survey that silently replaced another is how #52
+      // happened.
+      if (result) {
+        setReport(
+          `Imported ${result.soundings.length} ${result.soundings.length === 1 ? "sounding" : "soundings"}: ` +
+            `${result.added} added, ${result.updated} updated.`,
+        );
+      }
     } finally {
       setBusy(false);
       // Cleared so re-choosing the same file after fixing it still fires a change event.
@@ -56,6 +67,7 @@ export function SoundingPanel({ soundings, error, onImport, onRemove }: Sounding
       />
 
       {error && <p className="error">{error}</p>}
+      {!error && report && <p className="hint">{report}</p>}
 
       {soundings.length === 0 ? (
         <p className="hint">

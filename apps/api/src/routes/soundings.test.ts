@@ -1,4 +1,4 @@
-import type { Sounding } from "@bok/core";
+import { type Sounding, soundingId } from "@bok/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createSoundingStore, type SoundingStore } from "../soundings/store.js";
 import { createSoundingRoutes } from "./soundings.js";
@@ -25,6 +25,10 @@ const NORTH = {
   measuredAt: "2026-08-04T10:12:00Z",
   source: "echo-sounder",
 };
+
+/** Derived rather than written out, so the expectation cannot drift from the rule (#52). */
+const KILADHA_ID = soundingId(KILADHA.name, KILADHA.lon, KILADHA.lat);
+const NORTH_ID = soundingId(NORTH.name, NORTH.lon, NORTH.lat);
 
 describe("sounding routes", () => {
   let store: SoundingStore;
@@ -61,6 +65,32 @@ describe("sounding routes", () => {
     const { soundings } = await json<{ soundings: Sounding[] }>(await app.request("/soundings"));
     expect(soundings).toHaveLength(1);
     expect(soundings[0].depthM).toBe(0.8);
+  });
+
+  it("keeps a same-named reading taken somewhere else, rather than overwriting (#52)", async () => {
+    await post([KILADHA]);
+    // The second survey of issue #52: also "Bathy 0001", 15 km north.
+    await post([{ ...KILADHA, lon: 23.3216889, lat: 37.404918, depthM: 1.4, source: "rope" }]);
+
+    const { soundings } = await json<{ soundings: Sounding[] }>(await app.request("/soundings"));
+    expect(soundings).toHaveLength(2);
+    expect(soundings.map((s) => s.depthM).sort()).toEqual([0.6, 1.4]);
+  });
+
+  it("says how many rows it added and how many it replaced", async () => {
+    expect(await json<unknown>(await post([KILADHA, NORTH]))).toMatchObject({
+      added: 2,
+      updated: 0,
+    });
+    // One correction to a reading already stored, one reading that is new.
+    expect(
+      await json<unknown>(
+        await post([
+          { ...KILADHA, depthM: 0.8 },
+          { ...NORTH, name: "Bathy 0016" },
+        ]),
+      ),
+    ).toMatchObject({ added: 1, updated: 1 });
   });
 
   it("filters by bbox, which is how a project finds its own soundings", async () => {
@@ -102,8 +132,8 @@ describe("sounding routes", () => {
 
   it("deletes, then 404s on the second attempt", async () => {
     await post([KILADHA]);
-    expect((await app.request("/soundings/bathy-0001", { method: "DELETE" })).status).toBe(204);
-    expect((await app.request("/soundings/bathy-0001", { method: "DELETE" })).status).toBe(404);
+    expect((await app.request(`/soundings/${KILADHA_ID}`, { method: "DELETE" })).status).toBe(204);
+    expect((await app.request(`/soundings/${KILADHA_ID}`, { method: "DELETE" })).status).toBe(404);
   });
 
   describe("CSV (issue #48)", () => {
@@ -143,8 +173,8 @@ describe("sounding routes", () => {
       await post([KILADHA, NORTH]);
       const exported = await (await app.request("/soundings.csv")).text();
 
-      store.remove("bathy-0001");
-      store.remove("bathy-0015");
+      store.remove(KILADHA_ID);
+      store.remove(NORTH_ID);
       expect(store.list()).toEqual([]);
 
       expect((await postCsv(exported)).status).toBe(200);
@@ -152,8 +182,8 @@ describe("sounding routes", () => {
       // Including the timestamps — an export that dropped them would silently lose the
       // one thing that keeps a tide correction possible (D13).
       expect(soundings).toEqual([
-        expect.objectContaining({ id: "bathy-0001", measuredAt: KILADHA.measuredAt }),
-        expect.objectContaining({ id: "bathy-0015", measuredAt: NORTH.measuredAt }),
+        expect.objectContaining({ id: KILADHA_ID, measuredAt: KILADHA.measuredAt }),
+        expect.objectContaining({ id: NORTH_ID, measuredAt: NORTH.measuredAt }),
       ]);
     });
 

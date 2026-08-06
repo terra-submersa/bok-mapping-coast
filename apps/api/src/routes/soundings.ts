@@ -53,9 +53,15 @@ export function createSoundingRoutes(store: () => SoundingStore) {
   /**
    * POST /api/soundings — bulk upsert of a JSON array, or of a CSV body (issue #48).
    *
-   * Upsert rather than insert, keyed on an id derived from the name, so re-importing the
-   * same survey corrects it instead of doubling it. All-or-nothing: a bad row rejects the
-   * batch rather than leaving half a survey in the table for someone to reconcile later.
+   * Upsert rather than insert, keyed on an id derived from the name *and the position*
+   * (issue #52), so re-importing the same survey corrects it instead of doubling it,
+   * while a second survey that also starts at "Bathy 0001" lands beside the first rather
+   * than on top of it. All-or-nothing: a bad row rejects the batch rather than leaving
+   * half a survey in the table for someone to reconcile later.
+   *
+   * Answers with `added` and `updated` alongside the rows. Which of the two a row was is
+   * the thing the caller cannot work out afterwards, and it is what an import needs to be
+   * able to say — a survey that silently replaced another is how #52 happened.
    *
    * CSV is accepted directly because that is the shape the data actually has — waypoints
    * exported from a Garmin with the depths typed in beside them. Making the browser or
@@ -77,7 +83,7 @@ export function createSoundingRoutes(store: () => SoundingStore) {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "Malformed soundings." }, 400);
     }
-    return c.json({ soundings: store().putMany(soundings) });
+    return c.json(store().putMany(soundings));
   });
 
   /** PUT /api/soundings/:id — create or replace one. The path id wins over the body's. */

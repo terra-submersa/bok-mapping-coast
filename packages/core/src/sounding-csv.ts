@@ -66,7 +66,7 @@ export function parseSoundingCsv(text: string): Sounding[] {
     );
   }
 
-  return lines.slice(1).map(({ text: line, number }) => {
+  const soundings = lines.slice(1).map(({ text: line, number }) => {
     const cells = splitRow(line);
     const row: CsvRow = {};
     fields.forEach((field, index) => {
@@ -85,6 +85,24 @@ export function parseSoundingCsv(text: string): Sounding[] {
       throw new Error(`Line ${number}: ${detail}`);
     }
   });
+
+  // One file claiming two depths at one place is a typo, not data — and since the import
+  // upserts, it would resolve silently to whichever row came last. Reject it instead, and
+  // name both lines: the answer is always in the comparison between them.
+  const seen = new Map<string, number>();
+  soundings.forEach((sounding, index) => {
+    const line = lines[index + 1].number;
+    const first = seen.get(sounding.id);
+    if (first !== undefined) {
+      throw new Error(
+        `Line ${line}: "${sounding.name}" repeats the name and position of line ${first} — ` +
+          "one of them is a typo.",
+      );
+    }
+    seen.set(sounding.id, line);
+  });
+
+  return soundings;
 }
 
 /** Every field, in a stable column order, so an export re-imports to the same rows. */

@@ -12,7 +12,11 @@ import { projectSlug } from "./project.js";
  * into the fit — and that lives in `ProjectDocument.calibration`.
  */
 export interface Sounding {
-  /** Stable across a re-import: a slug of the name, so the same CSV twice is idempotent. */
+  /**
+   * Stable across a re-import: derived from the name *and* the position, so the same CSV
+   * twice is idempotent while two surveys that both start at "Bathy 0001" stay two
+   * surveys. See `soundingId` and D14.
+   */
   id: string;
   name: string;
   lon: number;
@@ -58,6 +62,40 @@ export interface SoundingInput {
 const MAX_PLAUSIBLE_DEPTH_M = 200;
 
 /**
+ * Decimal places the identity of a position is compared at. Six is ~0.11 m: fine enough
+ * that two real soundings never collide, coarse enough that float noise in a re-exported
+ * CSV does not invent a new point.
+ */
+const ID_COORD_DECIMALS = 6;
+
+/**
+ * The identity of a sounding: its name *and* where it was taken (D14).
+ *
+ * Name alone is not enough, and the reason is not hypothetical. Two surveys of two sites
+ * 15 km apart both numbered their rows "Bathy 0001", so importing the second silently
+ * overwrote six points of the first — in the one table in this system that cannot be
+ * recomputed. Same name at the same place still replaces, so re-importing a survey with a
+ * corrected depth works; same name somewhere else is now a different point.
+ *
+ * The shape is constrained: `[a-z0-9-]` only, because this is a path segment in
+ * `/api/soundings/:id`; no comma, or the CSV writer would have to quote it; and the
+ * coordinates left legible, because that is exactly what was missing when the overwrite
+ * had to be diagnosed. Hemisphere letters rather than a minus sign, so a western
+ * longitude does not produce a double dash.
+ *
+ *     soundingId("Bathy 0001", 23.15200319, 37.31572657)
+ *     // "bathy-0001-n37315727-e23152003"
+ */
+export function soundingId(name: string, lon: number, lat: number): string {
+  return `${projectSlug(name)}-${hemisphere(lat, "n", "s")}-${hemisphere(lon, "e", "w")}`;
+}
+
+function hemisphere(value: number, positive: string, negative: string): string {
+  const scaled = Math.round(Math.abs(value) * 10 ** ID_COORD_DECIMALS);
+  return `${value < 0 ? negative : positive}${scaled}`;
+}
+
+/**
  * Validates an untrusted value — a CSV row, a request body, a table row written by an
  * older version — and returns it typed. Throws with a message meant for the user.
  *
@@ -95,7 +133,9 @@ export function parseSounding(value: unknown): Sounding {
     throw new Error(`Sounding "${name}" has a measurement time that is not a string.`);
   }
 
-  const id = typeof row.id === "string" && row.id.trim() !== "" ? row.id.trim() : projectSlug(name);
+  // An explicit id wins, which is what makes an export→import round-trip exact.
+  const id =
+    typeof row.id === "string" && row.id.trim() !== "" ? row.id.trim() : soundingId(name, lon, lat);
 
   return {
     id,

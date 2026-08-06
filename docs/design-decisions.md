@@ -352,3 +352,49 @@ a flight boundary, which is what this app emits — so the convention is chosen 
 measurement, and any future reconstruction step will have to state its own.
 
 **Unblocks** #12. Recorded when the first real soundings arrived (#47).
+
+## D14 — A sounding is identified by name and position
+
+**Decided.** A sounding's identity is its name **and** where it was taken, compared at six
+decimal places (~0.11 m). Same name at the same place replaces; same name anywhere else is
+a different reading.
+
+**Why.** The identity used to be the name alone — `projectSlug(name)` — and on 2026-08-06
+that silently destroyed six calibration points. Two surveys were imported: `Bathymetry
+argolide` off Kiladha (23.152 / 37.316) and `ThD bathy` at the northern site fifteen
+kilometres away (23.322 / 37.405). Both number their rows from `Bathy 0001`, because that
+is what a sounder does with a fresh card. The second import upserted onto the first,
+row by row, and reported nothing.
+
+That is the worst failure this system can have. Every other artefact is derived: a
+composite can be refetched, a boundary re-derived, a contour recomputed. Fourteen readings
+cost a boat, a sounder and a morning on the water, and the database is the only copy.
+Nothing should be able to overwrite one without saying so.
+
+Six decimals is "the same numbers as written in the file", give or take float noise from a
+CSV round-trip. It is well below the ~3 m scatter of a handheld GPS fix, so it never merges
+two readings that are genuinely a metre apart.
+
+The id stays legible — `bathy-0001-n37315727-e23152003` — for three reasons. It is a path
+segment in `/api/soundings/:id`, so it must survive a URL without encoding. It must not
+contain a comma, or the CSV export would have to quote it. And the coordinates being
+readable is how the overwrite was diagnosed in the first place.
+
+**Cost.** A reading re-recorded under the same name from a slightly different GPS fix now
+becomes a second row rather than a correction to the first. That is the deliberate trade:
+a spurious duplicate is visible in the table and on the map, and a silent overwrite is not.
+
+Existing rows carry the old name-only ids, so `createSoundingStore` re-keys them once,
+guarded by `PRAGMA user_version`. Without it, re-importing the survey a row came from would
+insert a complete second copy beside it. The migration cannot tell a derived id from one
+supplied explicitly in a CSV, and re-keys both; no explicit ids existed when it was written.
+It also orphans any `ProjectDocument.calibration.excludedSoundingIds` — every saved
+project's list was empty, but a stale exclusion is the one thing here that would fail
+quietly, by letting a rejected sounding back into the fit.
+
+**Also.** `parseSoundingCsv` now rejects a file containing two rows with the same name and
+position, naming both lines, and an import answers with how many rows it added and how many
+it replaced. Both exist because the original failure was not the overwrite, it was the
+silence.
+
+**Recorded with** #52. Amends the id rule set in #47.

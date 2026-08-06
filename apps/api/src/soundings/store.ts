@@ -1,7 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { BBox, Sounding } from "@bok/core";
+import { type BBox, type Sounding, soundingId } from "@bok/core";
+
+/** What a bulk import did, so the caller can say it out loud rather than guess (#52). */
+export interface ImportResult {
+  soundings: Sounding[];
+  added: number;
+  updated: number;
+}
 
 export interface SoundingStore {
   /** Every sounding, or only those inside `bbox`, ordered by name. */
@@ -9,7 +16,7 @@ export interface SoundingStore {
   get(id: string): Sounding | null;
   put(sounding: Sounding): Sounding;
   /** Bulk upsert in one transaction — a CSV import is all-or-nothing. */
-  putMany(soundings: Sounding[]): Sounding[];
+  putMany(soundings: Sounding[]): ImportResult;
   remove(id: string): boolean;
   close(): void;
 }
@@ -48,6 +55,8 @@ export function createSoundingStore(path: string): SoundingStore {
     CREATE INDEX IF NOT EXISTS soundings_lonlat ON soundings (lon, lat);
   `);
 
+  rekeyByPosition(db);
+
   const columns = "id, name, lon, lat, depth_m, measured_at, source, note";
   const listStmt = db.prepare(`SELECT ${columns} FROM soundings ORDER BY name`);
   const listInBboxStmt = db.prepare(`
@@ -56,6 +65,7 @@ export function createSoundingStore(path: string): SoundingStore {
     ORDER BY name
   `);
   const getStmt = db.prepare(`SELECT ${columns} FROM soundings WHERE id = ?`);
+  const existsStmt = db.prepare("SELECT 1 FROM soundings WHERE id = ?");
   const putStmt = db.prepare(`
     INSERT INTO soundings (${columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name        = excluded.name,
@@ -102,14 +112,20 @@ export function createSoundingStore(path: string): SoundingStore {
       // behind. The rows are validated before they get here; this guards against a disk
       // or constraint failure mid-batch.
       db.exec("BEGIN");
+      let added = 0;
       try {
-        for (const sounding of soundings) write(sounding);
+        for (const sounding of soundings) {
+          // Counted before the write, because after it every row exists. Cheap: the id is
+          // the primary key, so this is an index probe.
+          if (existsStmt.get(sounding.id) === undefined) added++;
+          write(sounding);
+        }
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
-      return soundings;
+      return { soundings, added, updated: soundings.length - added };
     },
 
     remove(id) {
@@ -120,6 +136,51 @@ export function createSoundingStore(path: string): SoundingStore {
       db.close();
     },
   };
+}
+
+/**
+ * Migration 1 — ids derived from the name alone become ids derived from name and
+ * position (#52).
+ *
+ * Without this, every row already on disk keeps an id no import can ever produce again,
+ * so re-importing the survey it came from would insert a complete second copy beside it.
+ *
+ * Deterministic and collision-free: the old ids were unique per name, and the new id
+ * carries strictly more information than the old one did. Guarded by `user_version` so a
+ * second open is a no-op.
+ *
+ * Two things it knowingly does not handle. A row imported with an *explicit* id gets
+ * re-keyed like any other — telling the two apart would mean carrying a column that
+ * records where the id came from, which is not worth it for a case that has never
+ * occurred. And `ProjectDocument.calibration.excludedSoundingIds` holds sounding ids,
+ * which a re-key orphans; every saved project's list was empty when this was written, so
+ * there was nothing to migrate. If that ever stops being true, a stale exclusion fails
+ * quietly — it lets a sounding the planner had rejected back into the fit.
+ */
+function rekeyByPosition(db: DatabaseSync): void {
+  const version = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
+  if ((version?.user_version ?? 0) >= 1) return;
+
+  const rows = db.prepare("SELECT id, name, lon, lat FROM soundings").all() as {
+    id: string;
+    name: string;
+    lon: number;
+    lat: number;
+  }[];
+  const update = db.prepare("UPDATE soundings SET id = ? WHERE id = ?");
+
+  db.exec("BEGIN");
+  try {
+    for (const row of rows) {
+      const id = soundingId(row.name, row.lon, row.lat);
+      if (id !== row.id) update.run(id, row.id);
+    }
+    db.exec("PRAGMA user_version = 1");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 /**

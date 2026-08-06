@@ -93,6 +93,7 @@ export {
   parseSoundings,
   type Sounding,
   type SoundingInput,
+  soundingId,
 } from "./sounding.js";
 export { formatSoundingCsv, parseSoundingCsv } from "./sounding-csv.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
