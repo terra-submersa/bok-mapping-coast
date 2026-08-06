@@ -42,11 +42,23 @@ export {
   type RatioGrid,
   shallowWaterContour,
 } from "./contour.js";
+export { decimateGrid, MAX_CONTOUR_SIDE } from "./decimate.js";
+export {
+  DEPTH_CONTOUR_INTERVALS_M,
+  type DepthContourLevel,
+  type DepthContourLine,
+  type DepthContourOptions,
+  type DepthContourPlan,
+  depthContourLines,
+  MAX_DEPTH_CONTOUR_LEVELS,
+  planDepthContours,
+} from "./depth-contours.js";
 export {
   type DepthFit,
   depthToRatio,
   type FitPoint,
   fitDepth,
+  isUsableFit,
   MIN_CALIBRATION_POINTS,
   ratioToDepth,
   residuals,
@@ -74,7 +86,7 @@ export {
   MIN_RING_AREA_M2,
 } from "./rings.js";
 export { lonLatToGrid, type RatioSample, sampleRatio } from "./sample.js";
-export { PILOT2_VERTEX_CEILING, simplifyContour } from "./simplify.js";
+export { PILOT2_VERTEX_CEILING, simplifyContour, simplifyLines } from "./simplify.js";
 export {
   parseSounding,
   parseSoundings,

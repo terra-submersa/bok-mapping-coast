@@ -22,7 +22,7 @@ export interface ContourOptions {
  * ratio of 0, which would otherwise read as the shallowest possible water and
  * pull the whole coastline into the survey polygon.
  */
-const EXCLUDED = -1e9;
+export const EXCLUDED = -1e9;
 
 /**
  * Traces the boundary of water shallower than `threshold`.

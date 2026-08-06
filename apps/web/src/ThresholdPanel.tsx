@@ -1,4 +1,4 @@
-import { type DepthFit, depthToRatio, type Range, ratioToDepth } from "@bok/core";
+import { type DepthFit, depthToRatio, isUsableFit, type Range, ratioToDepth } from "@bok/core";
 import { useState } from "react";
 import { CollapsibleSection } from "./CollapsibleSection.js";
 
@@ -27,13 +27,8 @@ export function ThresholdPanel({
   const [targetDepth, setTargetDepth] = useState("");
   const [depthError, setDepthError] = useState<string | null>(null);
 
-  /**
-   * A fit with a non-positive slope is not usable, whatever its R². Stumpf's ratio rises
-   * with depth by construction, so a flat or falling line means the fit has latched onto
-   * something that is not depth, and labelling the slider in metres from it would put a
-   * confident number on nonsense.
-   */
-  const usableFit = fit && fit.m1 > 0 ? fit : null;
+  /** The D3 gate — see `isUsableFit`, which is also what gates the depth contour menu. */
+  const usableFit = isUsableFit(fit) ? fit : null;
 
   function applyTargetDepth() {
     if (!usableFit) return;

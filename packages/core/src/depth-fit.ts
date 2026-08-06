@@ -93,6 +93,21 @@ export function fitDepth(points: readonly FitPoint[]): DepthFit | null {
   return { m1, m0, r2, rmseM, n };
 }
 
+/**
+ * Whether a fit may be used to put metres on the screen.
+ *
+ * A fit with a non-positive slope is not usable, whatever its R². Stumpf's ratio rises
+ * with depth by construction, so a flat or falling line means the fit has latched onto
+ * something that is not depth, and labelling anything in metres from it would put a
+ * confident number on nonsense.
+ *
+ * Here rather than in a component for the same reason `fitDepth` gates on the point
+ * count here: two places spelling the rule is one place to forget it.
+ */
+export function isUsableFit(fit: DepthFit | null): fit is DepthFit {
+  return fit !== null && fit.m1 > 0;
+}
+
 export function ratioToDepth(fit: DepthFit, ratio: number): number {
   return fit.m1 * ratio - fit.m0;
 }

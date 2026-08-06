@@ -12,7 +12,7 @@ export const PILOT2_VERTEX_CEILING = 500;
 
 /** Degrees of latitude per metre. Longitude shrinks with latitude, but for a
  * simplification tolerance the difference is not worth a projection. */
-const DEGREES_PER_METRE = 1 / 111_320;
+export const DEGREES_PER_METRE = 1 / 111_320;
 
 /**
  * Douglas-Peucker simplification with the tolerance given in metres.
@@ -58,5 +58,34 @@ export function simplifyContour(
     coordinates: simplified.coordinates
       .map((polygon) => polygon.filter((ring) => ring.length >= 4))
       .filter((polygon) => polygon.length > 0),
+  };
+}
+
+/**
+ * The same Douglas-Peucker pass for open polylines — the depth contour lines (issue #51).
+ *
+ * Separate from `simplifyContour` because the two disagree about what is degenerate: a
+ * closed ring needs four positions, a line needs two. Kept in this file so one place
+ * still knows how metres become degrees.
+ */
+export function simplifyLines(
+  geometry: GeoJSON.MultiLineString,
+  toleranceMetres: number,
+): GeoJSON.MultiLineString {
+  const clone: GeoJSON.MultiLineString = {
+    type: "MultiLineString",
+    coordinates: geometry.coordinates.map((line) => line.map((position) => [...position])),
+  };
+  if (toleranceMetres <= 0 || clone.coordinates.length === 0) return clone;
+
+  const simplified = simplify(clone, {
+    tolerance: toleranceMetres * DEGREES_PER_METRE,
+    highQuality: true,
+    mutate: true,
+  }) as GeoJSON.MultiLineString;
+
+  return {
+    type: "MultiLineString",
+    coordinates: simplified.coordinates.filter((line) => line.length >= 2),
   };
 }
