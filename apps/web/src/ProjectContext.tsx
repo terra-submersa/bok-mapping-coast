@@ -101,6 +101,15 @@ export interface ProjectContextValue {
   setOpacity: (value: number) => void;
   layerView: LayerView;
   setLayerView: (value: LayerView) => void;
+  /**
+   * Depth contour interval in metres, 0 being off (issue #51).
+   *
+   * A way of looking at the seabed, not an input to the boundary — so it sits with
+   * `opacity` and `layerView` rather than with the tuning parameters below, and it is
+   * deliberately absent from `toDocument`.
+   */
+  contourIntervalM: number;
+  setContourIntervalM: (value: number) => void;
 
   /** Threshold, and the range the slider spans. */
   ratioRange: { min: number; max: number } | null;
@@ -196,6 +205,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [compositeProgress, setCompositeProgress] = useState<CompositeProgress | null>(null);
   const [opacity, setOpacity] = useState(0.8);
   const [layerView, setLayerView] = useState<LayerView>("depth");
+  const [contourIntervalM, setContourIntervalM] = useState(() =>
+    loadStoredNumber("contourIntervalM", 0),
+  );
   const [ratioRange, setRatioRange] = useState<{ min: number; max: number } | null>(null);
   const [threshold, setThreshold] = useState<number | null>(null);
   // Simplification tolerance, landward buffer, and the ring-noise filter are tuned
@@ -233,6 +245,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   useEffect(() => storeNumber("bufferMetres", bufferMetres), [bufferMetres]);
   useEffect(() => storeNumber("coastMetres", coastMetres), [coastMetres]);
   useEffect(() => storeNumber("minRingAreaM2", minRingAreaM2), [minRingAreaM2]);
+  useEffect(() => storeNumber("contourIntervalM", contourIntervalM), [contourIntervalM]);
 
   /** Everything downstream of the raster, dropped. Pure state — the map's own layers
    * are torn down by the effect in `MapLayout` that watches `composite`. */
@@ -528,6 +541,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setOpacity,
         layerView,
         setLayerView,
+        contourIntervalM,
+        setContourIntervalM,
         ratioRange,
         threshold,
         setThreshold,

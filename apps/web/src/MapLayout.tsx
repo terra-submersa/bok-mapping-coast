@@ -1,8 +1,10 @@
 import {
   type Aoi,
   type ContourRing,
+  type DepthContourLine,
   findRingContaining,
   nearestVertexIndex,
+  normalise,
   removeVertex,
   type Sounding,
 } from "@bok/core";
@@ -18,12 +20,19 @@ import { Outlet } from "react-router";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
-import { CalibrationProvider } from "./CalibrationContext.js";
 import type { Composite } from "./composite.js";
 import type { LayerView } from "./DepthPanel.js";
-import { renderComposite, renderSceneCount, sceneCountRange, waterRange } from "./depth-ramp.js";
+import {
+  rampColour,
+  renderComposite,
+  renderSceneCount,
+  sceneCountRange,
+  waterRange,
+} from "./depth-ramp.js";
 import { resetDraw } from "./draw-lifecycle.js";
+import { formatDepthM } from "./format.js";
 import { useProject } from "./ProjectContext.js";
+import { useDepthContours } from "./useDepthContours.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // Kiladha Bay, Argolic Gulf — same AOI as scripts/spike-sdb-kiladha.mjs.
@@ -37,6 +46,7 @@ const RINGS_SOURCE_ID = "rings";
 const BOUNDARY_SOURCE_ID = "boundary";
 const ZONES_SOURCE_ID = "zones";
 const INCLUSIONS_SOURCE_ID = "inclusions";
+const CONTOURS_SOURCE_ID = "depth-contours";
 const SOUNDINGS_SOURCE_ID = "soundings";
 
 /**
@@ -140,6 +150,48 @@ function soundingsFeatureCollection(
   };
 }
 
+interface ContourProperties {
+  depthM: number;
+  label: string;
+  colour: string;
+  /** The cartographic index contour — every fifth line, drawn thicker. */
+  index: boolean;
+}
+
+/**
+ * One feature per depth level, carrying its own colour (issue #51).
+ *
+ * The colour is a property rather than an `["interpolate", …]` paint expression because
+ * the stops would depend on the depth extent, which moves whenever the fit or the
+ * composite changes — that would need a `setPaintProperty` effect, where `setData`
+ * carries this for free. It is also literally `rampColour`, the function that painted
+ * the raster underneath, so the lines cannot disagree with it.
+ */
+function contoursFeatureCollection(
+  lines: readonly DepthContourLine[],
+  extentM: { min: number; max: number } | null,
+): GeoJSON.FeatureCollection<GeoJSON.MultiLineString, ContourProperties> {
+  const interval = lines.length > 1 ? lines[1].depthM - lines[0].depthM : 0;
+  return {
+    type: "FeatureCollection",
+    features: lines
+      .filter((line) => line.geometry.coordinates.length > 0)
+      .map((line) => {
+        const [r, g, b] = rampColour(extentM ? normalise(line.depthM, extentM) : 0.5);
+        return {
+          type: "Feature",
+          properties: {
+            depthM: line.depthM,
+            label: formatDepthM(line.depthM),
+            colour: `rgb(${r} ${g} ${b})`,
+            index: interval > 0 && Math.abs(line.depthM % (interval * 5)) < interval / 2,
+          },
+          geometry: line.geometry,
+        };
+      }),
+  };
+}
+
 function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   if (!aoi) return emptyFeatureCollection();
   return {
@@ -195,11 +247,12 @@ export function useMapControls(): MapContextValue {
  * to Area to trim the AOI.
  */
 export function MapLayout() {
+  // `CalibrationProvider` used to sit here too. It moved up to `App` in issue #51 so the
+  // header's contour menu can read the fit; `BoundaryProvider` stays, because the derived
+  // chain is expensive and belongs to the routes that actually show a boundary.
   return (
     <BoundaryProvider>
-      <CalibrationProvider>
-        <MapSurface />
-      </CalibrationProvider>
+      <MapSurface />
     </BoundaryProvider>
   );
 }
@@ -234,6 +287,9 @@ function MapSurface() {
     excludedSoundingIds,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
+  // The one call site. Deliberately not part of `useBoundary`: these lines read the
+  // seabed and must not move with the threshold, the zones or the export settings.
+  const { plan: contourPlan, lines: contourLines } = useDepthContours();
 
   /** Read by handlers registered once at mount, which cannot see current state. */
   const isDrawingRef = useRef(isDrawing);
@@ -480,6 +536,54 @@ function MapSurface() {
       });
 
       /**
+       * The depth contour stack (issue #51).
+       *
+       * Above the raster and the translucent boundary and zone fills on purpose — the
+       * seabed should be readable *through* the survey polygon, since judging one
+       * against the other is the whole reason these lines exist. Still below the
+       * soundings, which are the only observed thing on the map.
+       */
+      map.addSource(CONTOURS_SOURCE_ID, {
+        type: "geojson",
+        data: contoursFeatureCollection([], null),
+      });
+      map.addLayer({
+        id: "depth-contours-line",
+        type: "line",
+        source: CONTOURS_SOURCE_ID,
+        paint: {
+          "line-color": ["get", "colour"],
+          "line-width": ["case", ["get", "index"], 1.8, 0.9],
+          "line-opacity": 0.9,
+        },
+      });
+      map.addLayer({
+        id: "depth-contours-label",
+        type: "symbol",
+        source: CONTOURS_SOURCE_ID,
+        // Zoomed out over the whole gulf the lines merge into a wash, and labelling a
+        // wash helps nobody.
+        minzoom: 13,
+        layout: {
+          "symbol-placement": "line",
+          "symbol-spacing": 300,
+          "text-field": ["get", "label"],
+          "text-size": 11,
+          "text-max-angle": 30,
+          "text-padding": 4,
+          // The opposite call to the soundings layer, deliberately. A sounding is a
+          // measurement and must not be hidden; a contour label is one of hundreds of
+          // repetitions of the same handful of numbers, so let the collider thin them.
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": "#263238",
+          "text-halo-width": 1.5,
+        },
+      });
+
+      /**
        * Measured depths, drawn last so they sit over every derived layer (issue #49).
        *
        * They are the only thing on the map that was actually observed rather than
@@ -627,6 +731,14 @@ function MapSurface() {
     const source = mapRef.current?.getSource(INCLUSIONS_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(zonesFeatureCollection(inclusions));
   }, [overlaysReady, inclusions]);
+
+  // No teardown to match: switching the interval off yields no lines and empties the
+  // source, unlike the image source the composite needs removing.
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(CONTOURS_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(contoursFeatureCollection(contourLines, contourPlan.extentM));
+  }, [overlaysReady, contourLines, contourPlan.extentM]);
 
   useEffect(() => {
     if (!overlaysReady) return;

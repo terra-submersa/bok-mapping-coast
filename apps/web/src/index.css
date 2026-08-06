@@ -62,6 +62,80 @@ body,
   color: #ffffff;
 }
 
+.app-header .header-menu {
+  position: relative;
+}
+
+.app-header .header-menu-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 8%);
+  color: var(--header-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-header .header-menu-button[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+/* Its own class rather than the panel headers' `.chevron`: two rules ending in the same
+ * compound selector trip Biome's descending-specificity rule from across the file. */
+.app-header .header-menu-chevron {
+  font-size: 10px;
+}
+
+/*
+ * `z-index` is load-bearing: `.app-main` is positioned but has `z-index: auto`, so it
+ * creates no stacking context and `.sidebar { z-index: 1 }` competes with this popover
+ * in the root one. Anything below 2 and the sidebar covers the menu.
+ */
+.app-header .header-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+.app-header .header-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-header .header-menu-item:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
+.app-header .header-menu-item[aria-checked="true"] {
+  background: var(--panel-accent);
+  color: #ffffff;
+}
+
+.app-header .header-menu-note {
+  margin: 6px 4px 2px;
+  color: var(--panel-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /*
  * The positioned ancestor MapView's `position: absolute; inset: 0` resolves
  * against, so the map fills the space under the banner instead of the whole

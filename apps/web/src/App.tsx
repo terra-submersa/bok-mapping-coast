@@ -3,6 +3,7 @@ import { AppHeader } from "./AppHeader.js";
 import { AreaPage } from "./AreaPage.js";
 import { BoundaryPage } from "./BoundaryPage.js";
 import { CalibratePage } from "./CalibratePage.js";
+import { CalibrationProvider } from "./CalibrationContext.js";
 import { FlyPage } from "./FlyPage.js";
 import { MapLayout } from "./MapLayout.js";
 import { ProjectProvider } from "./ProjectContext.js";
@@ -20,13 +21,18 @@ import { ProjectProvider } from "./ProjectContext.js";
  *
  * Calibrate joined them in issue #49: a reference point is dropped *on the map* and read
  * against the imagery under it, which a page with no map cannot do.
+ *
+ * Both providers wrap the *banner* as well as the router (issue #51): the header's depth
+ * contour menu reads the interval and the ratio→metres fit, and neither exists outside
+ * them. Providers render no DOM and `#root` is the flex column, so hoisting them past
+ * `<main>` changes nothing about the layout.
  */
 export function App() {
   return (
-    <>
-      <AppHeader />
-      <main className="app-main">
-        <ProjectProvider>
+    <ProjectProvider>
+      <CalibrationProvider>
+        <AppHeader />
+        <main className="app-main">
           <Routes>
             <Route element={<MapLayout />}>
               <Route path="/area" element={<AreaPage />} />
@@ -38,8 +44,8 @@ export function App() {
                 unknown URL renders an empty <main> that looks broken. Catches "/" too. */}
             <Route path="*" element={<Navigate to="/area" replace />} />
           </Routes>
-        </ProjectProvider>
-      </main>
-    </>
+        </main>
+      </CalibrationProvider>
+    </ProjectProvider>
   );
 }

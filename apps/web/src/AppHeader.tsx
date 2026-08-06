@@ -1,4 +1,5 @@
 import { NavLink } from "react-router";
+import { ContourMenu } from "./ContourMenu.js";
 
 /**
  * Provisional working name — invented so the banner has something to display,
@@ -20,8 +21,12 @@ const SECTIONS = [
 ];
 
 /**
- * The app shell's banner: wordmark plus one link per big feature. Kept
- * presentational — it knows the routes exist and nothing about their state.
+ * The app shell's banner: wordmark, one link per big feature, and the controls that
+ * belong to no single step.
+ *
+ * The depth contour menu is the first of those (issue #51). It sits here rather than in
+ * a sidebar because the lines are a way of *looking* at the seabed, as useful while
+ * trimming the AOI on Area or judging a sounding on Calibrate as on Boundary.
  */
 export function AppHeader() {
   return (
@@ -34,6 +39,7 @@ export function AppHeader() {
           </NavLink>
         ))}
       </nav>
+      <ContourMenu />
     </header>
   );
 }

@@ -12,10 +12,11 @@ export function useCalibrationState(): CalibrationState {
 /**
  * Samples the composite at every sounding once, and shares the result.
  *
- * Two routes want it and they are not the same route: Calibrate tabulates the residuals,
- * and Boundary needs the fit to label the threshold slider in metres (issue #50). Both
- * live under `MapLayout`, so the provider goes there — calling `useCalibration` in each
- * would walk the raster twice for the same answer.
+ * Three places want it and they are not the same place: Calibrate tabulates the
+ * residuals, Boundary needs the fit to label the threshold slider in metres (issue #50),
+ * and the banner's depth contour menu is disabled until there is one (issue #51). The
+ * banner is outside the router, so the provider sits in `App` — calling `useCalibration`
+ * in each would walk the raster three times for the same answer.
  */
 export function CalibrationProvider({ children }: { children: ReactNode }) {
   const state = useCalibration();
