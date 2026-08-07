@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latitudeBand, lonLatToUtm, utmZone } from "./utm.js";
+import { latitudeBand, lonLatToUtm, projectToZone, utmToLonLat, utmZone } from "./utm.js";
 
 /**
  * Every easting and northing below came out of PROJ 9.5.1 via pyproj 3.7.2 —
@@ -74,6 +74,90 @@ describe("lonLatToUtm", () => {
     expect(utm.zone).toBe(33);
     expect(utm.eastingM).toBeCloseTo(615914.524877, 3);
     expect(utm.northingM).toBeCloseTo(8663320.201404, 3);
+  });
+});
+
+/**
+ * The inverse is checked against the *same* PROJ numbers, run the other way: the eastings
+ * and northings fed in below came out of PROJ, and the longitudes and latitudes expected
+ * back are the ones that produced them. So this is not a round-trip of this file's
+ * arithmetic against itself — a β coefficient that disagrees with PROJ's inverse fails
+ * here, because the input is PROJ's output.
+ */
+describe("utmToLonLat", () => {
+  /** A tenth of a microdegree is about a centimetre — well inside the series' own error. */
+  const DEG_TOLERANCE = 1e-7;
+
+  it("returns PROJ's input at Kiladha Bay", () => {
+    const [lon, lat] = utmToLonLat(34, "N", 687802.998972, 4144301.721762);
+    expect(lon).toBeCloseTo(23.1225, 7);
+    expect(lat).toBeCloseTo(37.4265, 7);
+  });
+
+  it("puts the false easting back on the central meridian", () => {
+    const [lon, lat] = utmToLonLat(34, "N", 500000, 4142187.108444);
+    expect(Math.abs(lon - 21)).toBeLessThan(DEG_TOLERANCE);
+    expect(lat).toBeCloseTo(37.4265, 7);
+  });
+
+  it("puts zero northing back on the equator", () => {
+    const [lon, lat] = utmToLonLat(31, "N", 500000, 0);
+    expect(Math.abs(lon - 3)).toBeLessThan(DEG_TOLERANCE);
+    expect(Math.abs(lat)).toBeLessThan(DEG_TOLERANCE);
+  });
+
+  it("undoes the southern false northing", () => {
+    const [lon, lat] = utmToLonLat(56, "S", 334368.633648, 6250948.345385);
+    expect(lon).toBeCloseTo(151.2093, 7);
+    expect(lat).toBeCloseTo(-33.8688, 7);
+  });
+
+  it("returns PROJ's input near the antimeridian", () => {
+    const [lon, lat] = utmToLonLat(60, "S", 709243.229845, 7787269.284855);
+    expect(lon).toBeCloseTo(179, 7);
+    expect(lat).toBeCloseTo(-20, 7);
+  });
+
+  /**
+   * A zone edge, three degrees off the central meridian, where the series is working
+   * hardest. Using −α in place of β would still pass every central-meridian case above and
+   * fail here by metres.
+   */
+  it("round-trips a zone edge to the millimetre", () => {
+    const utm = projectToZone(24, 37.4265, 34);
+    const [lon, lat] = utmToLonLat(34, "N", utm.eastingM, utm.northingM);
+    expect(lon).toBeCloseTo(24, 9);
+    expect(lat).toBeCloseTo(37.4265, 9);
+  });
+});
+
+describe("projectToZone", () => {
+  /**
+   * The reason this function is separate from `lonLatToUtm`: 24°E is in zone 35, but a
+   * Sentinel-2 tile anchored in zone 34 reaches it, and enumerating that tile means asking
+   * for zone 34 coordinates anyway. `lonLatToUtm` would silently answer about zone 35.
+   */
+  it("honours the zone it is given, even the wrong one", () => {
+    expect(utmZone(24, 37.4265)).toBe(35);
+
+    // Zone 35's central meridian is 27°E, so 24°E sits west of it: easting under 500 000.
+    const natural = lonLatToUtm(24, 37.4265);
+    expect(natural.zone).toBe(35);
+    expect(natural.eastingM).toBeLessThan(500000);
+
+    // Zone 34's is 21°E, so the same ground is 3° *east* of centre — roughly 265 km of
+    // departure at this latitude, and well outside the zone's nominal 500 000 ± 166 km.
+    const forced = projectToZone(24, 37.4265, 34);
+    expect(forced.zone).toBe(34);
+    expect(forced.epsg).toBe(32634);
+    expect(forced.eastingM).toBeGreaterThan(760000);
+    expect(forced.eastingM).toBeLessThan(770000);
+  });
+
+  it("agrees with lonLatToUtm when handed the natural zone", () => {
+    const natural = lonLatToUtm(23.1225, 37.4265);
+    const forced = projectToZone(23.1225, 37.4265, 34);
+    expect(forced).toEqual(natural);
   });
 });
 

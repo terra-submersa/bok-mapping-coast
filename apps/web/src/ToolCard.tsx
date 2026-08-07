@@ -1,4 +1,4 @@
-import { geodesicInverse, lonLatToUtm } from "@bok/core";
+import { geodesicInverse, lonLatToUtm, sentinelTileId } from "@bok/core";
 import {
   formatBearingDeg,
   formatDistanceM,
@@ -100,6 +100,15 @@ export function ToolCard() {
                 EPSG:{utm.epsg} ({utm.zone}
                 {utm.hemisphere})
               </dd>
+              {/*
+               * The Sentinel-2 granule this point sits in (issue #56) — the beginnings of
+               * the per-tile calibration split, and the quickest way to tell whether a step
+               * in the contour lines up with a granule edge. Singular by convention, not by
+               * fact: footprints overlap by 9.8 km, so up to four tiles cover any point.
+               * This is the one whose 100 km square it falls in.
+               */}
+              <dt>Tile</dt>
+              <dd>{sentinelTileId(utmPoint[0], utmPoint[1]) ?? "—"}</dd>
               <dt>Lat, lon</dt>
               <dd>{formatLonLat(utmPoint)}</dd>
             </dl>

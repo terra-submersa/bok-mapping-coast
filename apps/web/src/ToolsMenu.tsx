@@ -23,13 +23,17 @@ const OPTIONS: { value: ActiveTool; label: string }[] = [
  * the wrong abstraction here would be harder to unpick than the copy.
  */
 export function ToolsMenu() {
-  const { activeTool, setActiveTool } = useTool();
+  const { activeTool, setActiveTool, showSentinelTiles, setShowSentinelTiles } = useTool();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selected = OPTIONS.find((option) => option.value === activeTool) ?? OPTIONS[0];
+  /** The overlay is independent of the armed tool, so the trigger has to name both. */
+  const label = showSentinelTiles ? `${selected.label} + S2 tiles` : selected.label;
+  /** The checkbox sits after the radio group in the roving-focus order. */
+  const TILES_INDEX = OPTIONS.length;
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +78,7 @@ export function ToolsMenu() {
           break;
         case "End":
           event.preventDefault();
-          focusItem(OPTIONS.length - 1);
+          focusItem(TILES_INDEX);
           break;
         case "Escape":
           event.preventDefault();
@@ -106,7 +110,7 @@ export function ToolsMenu() {
           }
         }}
       >
-        Tools: {selected.label}
+        Tools: {label}
         <span className="header-menu-chevron" aria-hidden="true">
           ▾
         </span>
@@ -130,6 +134,36 @@ export function ToolsMenu() {
               {option.label}
             </button>
           ))}
+
+          {/*
+           * An overlay, not a gesture — hence a checkbox below a rule rather than a fourth
+           * radio. It takes no map clicks, so it stays on while a tool is armed, and
+           * measuring across a seam while seeing where the seam is, is the point of it.
+           */}
+          <hr className="header-menu-rule" />
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={showSentinelTiles}
+            className="header-menu-item"
+            ref={(element) => {
+              itemRefs.current[TILES_INDEX] = element;
+            }}
+            onClick={() => setShowSentinelTiles(!showSentinelTiles)}
+            onKeyDown={onItemKeyDown(TILES_INDEX)}
+          >
+            <span className="header-menu-tick" aria-hidden="true">
+              {showSentinelTiles ? "✓" : ""}
+            </span>
+            Sentinel-2 tiles
+          </button>
+          {showSentinelTiles && (
+            <p className="header-menu-note">
+              Granule footprints, computed from the MGRS grid. They overlap by 9.8 km, so a
+              discontinuity in the composite should fall on one of these edges.
+            </p>
+          )}
+
           {/*
            * Said up front, because arming a tool takes the next map click away from
            * drawing and from dropping a sounding. A Planner who has just armed Measure and

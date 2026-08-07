@@ -129,6 +129,27 @@ body,
   color: #ffffff;
 }
 
+/*
+ * Separates the radio group — which tool has the next click — from the overlay toggles
+ * below it, which take no clicks at all. Without the rule the checkbox reads as a fourth
+ * mutually exclusive choice, which is exactly what it is not.
+ */
+.app-header .header-menu-rule {
+  height: 0;
+  margin: 6px 4px;
+  border: none;
+  border-top: 1px solid rgb(0 0 0 / 12%);
+}
+
+/*
+ * A fixed-width gutter for the tick, so the checkbox's label starts where the radio items'
+ * labels do whether or not it is checked.
+ */
+.app-header .header-menu-tick {
+  display: inline-block;
+  width: 14px;
+}
+
 .app-header .header-menu-note {
   margin: 6px 4px 2px;
   color: var(--panel-muted);

@@ -1,12 +1,16 @@
 import {
   type Aoi,
+  type BBox,
   type ContourRing,
   type DepthContourLine,
   findRingContaining,
   nearestVertexIndex,
   normalise,
   removeVertex,
+  type SentinelTile,
   type Sounding,
+  sameBbox,
+  sentinelTilesIn,
 } from "@bok/core";
 import {
   type GeoJSONSource,
@@ -15,7 +19,7 @@ import {
   NavigationControl,
   type StyleSpecification,
 } from "maplibre-gl";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet } from "react-router";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
@@ -52,6 +56,7 @@ const INCLUSIONS_SOURCE_ID = "inclusions";
 const CONTOURS_SOURCE_ID = "depth-contours";
 const SOUNDINGS_SOURCE_ID = "soundings";
 const TOOLS_SOURCE_ID = "tools";
+const SENTINEL_SOURCE_ID = "sentinel-tiles";
 
 /**
  * Violet, because it is the one hue not already meaning something: blue is the AOI, amber
@@ -60,6 +65,14 @@ const TOOLS_SOURCE_ID = "tools";
  * Posidonia and blown-out sand, which is the whole span of this basemap.
  */
 const TOOL_COLOUR = "#e040fb";
+
+/**
+ * Near-white and unsaturated, because the Sentinel-2 tile grid is furniture rather than
+ * data (issue #56). Every hue on this map already means something, and a coloured grid
+ * would read as one more derived geometry competing with the boundary — this one is a
+ * reference frame the other layers are judged against.
+ */
+const SENTINEL_TILE_COLOUR = "#eceff1";
 
 /**
  * How close a shift-click has to land to count as "on" a vertex. A screen distance,
@@ -250,6 +263,31 @@ function toolsFeatureCollection(
   return { type: "FeatureCollection", features };
 }
 
+/**
+ * The Sentinel-2 tile grid, as one source feeding an outline and a label (issue #56).
+ *
+ * The label is its own Point feature rather than a symbol on the polygon: MapLibre places a
+ * polygon's label at its visual centre, which for a footprint mostly off screen is off
+ * screen too, and a grid whose labels vanish as you pan into a tile is worse than no
+ * labels. An explicit centre keeps the id attached to the tile it names.
+ */
+function sentinelTilesFeatureCollection(
+  tiles: readonly SentinelTile[],
+): GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.Point, { label: string }> {
+  const features: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.Point, { label: string }>[] = [];
+
+  for (const tile of tiles) {
+    features.push({ type: "Feature", properties: { label: tile.id }, geometry: tile.polygon });
+    features.push({
+      type: "Feature",
+      properties: { label: tile.id },
+      geometry: { type: "Point", coordinates: tile.centre },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
+}
+
 function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSON.Polygon> {
   if (!aoi) return emptyFeatureCollection();
   return {
@@ -325,6 +363,8 @@ function MapSurface() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isDroppingSounding, setIsDroppingSounding] = useState(false);
   const [droppedPoint, setDroppedPoint] = useState<{ lon: number; lat: number } | null>(null);
+  /** What the Sentinel-2 tile grid is currently drawn for, or null while it is off. */
+  const [viewBbox, setViewBbox] = useState<BBox | null>(null);
 
   const {
     aoi,
@@ -345,7 +385,8 @@ function MapSurface() {
     excludedSoundingIds,
   } = useProject();
   const { rings, selectedRing, boundary } = useBoundaryState();
-  const { activeTool, setActiveTool, measurePoints, utmPoint, pushToolPoint } = useTool();
+  const { activeTool, setActiveTool, measurePoints, utmPoint, pushToolPoint, showSentinelTiles } =
+    useTool();
   // The one call site. Deliberately not part of `useBoundary`: these lines read the
   // seabed and must not move with the threshold, the zones or the export settings.
   const { plan: contourPlan, lines: contourLines } = useDepthContours();
@@ -656,6 +697,50 @@ function MapSurface() {
       });
 
       /**
+       * The Sentinel-2 tile grid (issue #56).
+       *
+       * Above the derived geometry it explains — a seam in the contour has to be readable
+       * against the edge that caused it — and below the soundings and the tool overlay,
+       * which are the two things nothing may cover. Thin, dashed and unsaturated so that
+       * over a whole viewport of tiles it stays a frame rather than becoming the subject.
+       */
+      map.addSource(SENTINEL_SOURCE_ID, {
+        type: "geojson",
+        data: sentinelTilesFeatureCollection([]),
+      });
+      map.addLayer({
+        id: "sentinel-tiles-line",
+        type: "line",
+        source: SENTINEL_SOURCE_ID,
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: {
+          "line-color": SENTINEL_TILE_COLOUR,
+          "line-width": 1,
+          "line-opacity": 0.6,
+          "line-dasharray": [4, 3],
+        },
+      });
+      map.addLayer({
+        id: "sentinel-tiles-label",
+        type: "symbol",
+        source: SENTINEL_SOURCE_ID,
+        filter: ["==", ["geometry-type"], "Point"],
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          // Every tile in view is named or the grid is ambiguous, so the collider gets no
+          // say — the same call as the soundings, for the same reason.
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": SENTINEL_TILE_COLOUR,
+          "text-halo-color": "#263238",
+          "text-halo-width": 1.5,
+          "text-opacity": 0.8,
+        },
+      });
+
+      /**
        * Measured depths, drawn last so they sit over every derived layer (issue #49).
        *
        * They are the only thing on the map that was actually observed rather than
@@ -891,6 +976,59 @@ function MapSurface() {
     const source = mapRef.current?.getSource(TOOLS_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(toolsFeatureCollection(measurePoints, utmPoint));
   }, [overlaysReady, measurePoints, utmPoint]);
+
+  /**
+   * The viewport, for the Sentinel-2 tile grid (issue #56).
+   *
+   * `MapScale`'s subscribe-and-unsubscribe pattern, on `moveend` rather than `move`:
+   * rebuilding a screenful of densified footprints on every animation frame of a pan is
+   * work nobody sees, and the grid is a reference frame — arriving a beat after the pan
+   * settles is not a defect. Only subscribed while the overlay is on, so a Planner who
+   * never turns it on pays nothing.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!overlaysReady || !map || !showSentinelTiles) {
+      setViewBbox(null);
+      return;
+    }
+
+    function recompute() {
+      if (!map) return;
+      const bounds = map.getBounds();
+      // Rounded to about a hundred metres, so that a nudge of the map does not rebuild
+      // every footprint for a grid that would land on the same pixels.
+      const round = (value: number) => Math.round(value * 1000) / 1000;
+      const next: BBox = [
+        round(bounds.getWest()),
+        round(bounds.getSouth()),
+        round(bounds.getEast()),
+        round(bounds.getNorth()),
+      ];
+      setViewBbox((current) => (sameBbox(current, next) ? current : next));
+    }
+
+    recompute();
+    map.on("moveend", recompute);
+    map.on("resize", recompute);
+    return () => {
+      map.off("moveend", recompute);
+      map.off("resize", recompute);
+    };
+  }, [overlaysReady, showSentinelTiles]);
+
+  const sentinelTiles = useMemo<SentinelTile[]>(
+    () => (showSentinelTiles && viewBbox ? sentinelTilesIn(viewBbox) : []),
+    [showSentinelTiles, viewBbox],
+  );
+
+  // No teardown to match, as with the contour lines: switching the overlay off yields no
+  // tiles and empties the source.
+  useEffect(() => {
+    if (!overlaysReady) return;
+    const source = mapRef.current?.getSource(SENTINEL_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(sentinelTilesFeatureCollection(sentinelTiles));
+  }, [overlaysReady, sentinelTiles]);
 
   // A crosshair while the next click will place a reference point or feed a tool. Without
   // it the mode is invisible on the map and only the banner says anything is armed.

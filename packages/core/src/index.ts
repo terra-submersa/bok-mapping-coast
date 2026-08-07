@@ -88,6 +88,17 @@ export {
   MIN_RING_AREA_M2,
 } from "./rings.js";
 export { lonLatToGrid, type RatioSample, sampleRatio } from "./sample.js";
+export {
+  MAX_SENTINEL_TILES,
+  MGRS_SQUARE_M,
+  SENTINEL_TILE_OVERLAP_M,
+  SENTINEL_TILE_SIZE_M,
+  type SentinelTile,
+  type SentinelTilesOptions,
+  sentinelTileId,
+  sentinelTilesCovering,
+  sentinelTilesIn,
+} from "./sentinel-tiles.js";
 export { PILOT2_VERTEX_CEILING, simplifyContour, simplifyLines } from "./simplify.js";
 export {
   parseSounding,
@@ -98,5 +109,12 @@ export {
 } from "./sounding.js";
 export { formatSoundingCsv, parseSoundingCsv } from "./sounding-csv.js";
 export { normalise, percentileRange, type Range } from "./stretch.js";
-export { latitudeBand, lonLatToUtm, type UtmCoordinate, utmZone } from "./utm.js";
+export {
+  latitudeBand,
+  lonLatToUtm,
+  projectToZone,
+  type UtmCoordinate,
+  utmToLonLat,
+  utmZone,
+} from "./utm.js";
 export { addZones, subtractZones } from "./zones.js";

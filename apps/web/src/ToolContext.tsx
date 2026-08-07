@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import { loadStoredBoolean, storeBoolean } from "./param-storage.js";
 
 /**
  * Which map interrogation tool has the next click (issue #53).
@@ -21,7 +22,19 @@ export interface ToolState {
   pushToolPoint: (point: GeoJSON.Position) => void;
   /** The card's `×`: empties the points and disarms. */
   clearTool: () => void;
+
+  /**
+   * Whether the Sentinel-2 tile grid is drawn (issue #56).
+   *
+   * Not an `ActiveTool`, deliberately. It steals no clicks, so arming Measure must not turn
+   * it off — seeing where a seam is *while measuring across it* is most of the point.
+   */
+  showSentinelTiles: boolean;
+  setShowSentinelTiles: (show: boolean) => void;
 }
+
+/** localStorage key for the tile overlay, under `param-storage`'s prefix. */
+const SENTINEL_TILES_KEY = "sentinelTiles";
 
 const ToolContext = createContext<ToolState | null>(null);
 
@@ -40,15 +53,26 @@ export function useTool(): ToolState {
  * `MapContext` cannot hold it — that one is created inside `MapSurface` and handed only to
  * the `<Outlet/>`.
  *
- * Not `ProjectContext` either, and not persisted. Everything in that provider is either
- * saved with the project or restored from localStorage, and a tool is neither: it is a
- * gesture in progress. Restoring an armed tool on reload would silently claim the first
- * click of the next session.
+ * Not `ProjectContext` either. Everything in that provider is either saved with the project
+ * or restored from localStorage, and an armed tool is neither: it is a gesture in progress,
+ * and restoring one on reload would silently claim the first click of the next session.
+ *
+ * The tile overlay (issue #56) *is* restored, and the difference is exactly that — it is a
+ * way of looking, like `contourIntervalM`, not a gesture. It takes no clicks, so finding it
+ * still on tomorrow costs nothing and having to turn it back on every morning would.
  */
 export function ToolProvider({ children }: { children: ReactNode }) {
   const [activeTool, setActiveToolState] = useState<ActiveTool>(null);
   const [measurePoints, setMeasurePoints] = useState<GeoJSON.Position[]>([]);
   const [utmPoint, setUtmPoint] = useState<GeoJSON.Position | null>(null);
+  const [showSentinelTiles, setShowSentinelTilesState] = useState(() =>
+    loadStoredBoolean(SENTINEL_TILES_KEY, false),
+  );
+
+  const setShowSentinelTiles = useCallback((show: boolean) => {
+    setShowSentinelTilesState(show);
+    storeBoolean(SENTINEL_TILES_KEY, show);
+  }, []);
 
   const setActiveTool = useCallback((tool: ActiveTool) => {
     // Switching tools clears both, rather than leaving the other one's overlay on the map
@@ -81,8 +105,26 @@ export function ToolProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ activeTool, setActiveTool, measurePoints, utmPoint, pushToolPoint, clearTool }),
-    [activeTool, setActiveTool, measurePoints, utmPoint, pushToolPoint, clearTool],
+    () => ({
+      activeTool,
+      setActiveTool,
+      measurePoints,
+      utmPoint,
+      pushToolPoint,
+      clearTool,
+      showSentinelTiles,
+      setShowSentinelTiles,
+    }),
+    [
+      activeTool,
+      setActiveTool,
+      measurePoints,
+      utmPoint,
+      pushToolPoint,
+      clearTool,
+      showSentinelTiles,
+      setShowSentinelTiles,
+    ],
   );
 
   return <ToolContext.Provider value={value}>{children}</ToolContext.Provider>;
