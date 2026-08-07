@@ -31,6 +31,7 @@ import {
 } from "./depth-ramp.js";
 import { resetDraw } from "./draw-lifecycle.js";
 import { formatDepthM } from "./format.js";
+import { MapScale } from "./MapScale.js";
 import { useProject } from "./ProjectContext.js";
 import { ToolCard } from "./ToolCard.js";
 import { type ActiveTool, useTool } from "./ToolContext.js";
@@ -1033,6 +1034,9 @@ function MapSurface() {
       {/* Outside the sidebar, so it is the same readout on every step and the step's own
           panels never push it around. */}
       <ToolCard />
+      {/* The map lives in a ref, so `overlaysReady` flipping is the render in which
+          `mapRef.current` exists to hand over (issue #55). */}
+      {overlaysReady && mapRef.current && <MapScale map={mapRef.current} />}
     </div>
   );
 }
