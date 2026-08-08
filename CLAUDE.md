@@ -62,6 +62,38 @@ switching steps never tears the map down.
 `core` exists so the interesting logic is testable without a server or a browser.
 Both `api` and `web` consume it.
 
+### Inside `apps/web/src`
+
+Grouped by role, mirroring `apps/api` (issue #57). Tests are co-located with
+their module, as everywhere else in this repo.
+
+```
+main.tsx   index.css   the entry — index.html hard-codes /src/main.tsx
+shell/     the frame on screen for every route: route table, banner, its two menus
+pages/     one file per route element; each is "which panels does this step show"
+map/       the single MapLibre instance and everything that serves it
+panels/    the sidebar vocabulary, plus the accordion that sequences it
+state/     React contexts and the derived-value hooks behind them
+data/      the I/O edge — /api clients and localStorage
+lib/       leaf utilities that depend on nothing else in src
+```
+
+Dependencies run `shell → pages → {map, panels} → state → data → lib`, with one
+deliberate exception: `state/ProjectContext` imports `waterRange` from
+`map/depth-ramp` to pick the default threshold. That function is genuinely shared
+with the ramp painting and is welded to its neighbours in that file; moving it is
+issue #59, not something to do casually.
+
+**Imports are relative, and there is no path alias.** One level of nesting makes
+`../lib/format.js` the worst case, and an alias would have to be declared three
+times — `tsconfig` paths, `vite.config.ts`, and the *standalone* `vitest.config.ts`
+that Vitest loads instead of `vite.config.ts`. The failure mode there is the nasty
+asymmetric one: the app builds while the tests cannot resolve. Relative paths also
+keep an upward edge like the one above visible instead of hiding it behind a prefix.
+
+`map/MapLayout.tsx` is still ~1130 lines and is the largest remaining
+comprehensibility problem in the app; splitting it is issue #58.
+
 The monorepo is scaffolded and runnable (Node 22 — see `.nvmrc` — via `corepack`,
 pnpm workspaces, Biome, Vitest). From the repo root:
 
