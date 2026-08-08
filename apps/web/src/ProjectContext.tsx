@@ -19,8 +19,8 @@ import {
 } from "react";
 import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
 import { type Composite, type CompositeProgress, fetchTiledComposite } from "./composite.js";
-import type { LayerView } from "./DepthPanel.js";
 import { waterRange } from "./depth-ramp.js";
+import type { LayerView } from "./layer-view.js";
 import { loadStoredNumber, storeNumber } from "./param-storage.js";
 import {
   deleteProject as deleteProjectRequest,

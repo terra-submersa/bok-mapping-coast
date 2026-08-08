@@ -25,7 +25,6 @@ import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
 import type { Composite } from "./composite.js";
-import type { LayerView } from "./DepthPanel.js";
 import {
   rampColour,
   renderComposite,
@@ -35,6 +34,7 @@ import {
 } from "./depth-ramp.js";
 import { resetDraw } from "./draw-lifecycle.js";
 import { formatDepthM } from "./format.js";
+import type { LayerView } from "./layer-view.js";
 import { MapScale } from "./MapScale.js";
 import { useProject } from "./ProjectContext.js";
 import { ToolCard } from "./ToolCard.js";

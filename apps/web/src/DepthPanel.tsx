@@ -1,7 +1,6 @@
 import { CollapsibleSection } from "./CollapsibleSection.js";
 import type { Composite, CompositeProgress } from "./composite.js";
-
-export type LayerView = "depth" | "sceneCount";
+import type { LayerView } from "./layer-view.js";
 
 export interface DepthPanelProps {
   hasAoi: boolean;
