@@ -6,7 +6,7 @@ import { BufferPanel } from "./BufferPanel.js";
 import { useCalibrationState } from "./CalibrationContext.js";
 import { DepthPanel } from "./DepthPanel.js";
 import { ExportPanel } from "./ExportPanel.js";
-import { useMapControls } from "./MapLayout.js";
+import { useMapControls } from "./MapContext.js";
 import { useProject } from "./ProjectContext.js";
 import { RingPanel } from "./RingPanel.js";
 import { SimplifyPanel } from "./SimplifyPanel.js";

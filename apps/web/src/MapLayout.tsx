@@ -19,7 +19,7 @@ import {
   NavigationControl,
   type StyleSpecification,
 } from "maplibre-gl";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet } from "react-router";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
@@ -35,6 +35,7 @@ import {
 import { resetDraw } from "./draw-lifecycle.js";
 import { formatDepthM } from "./format.js";
 import type { LayerView } from "./layer-view.js";
+import { type DrawTarget, type MapContextValue, MapControlsProvider } from "./MapContext.js";
 import { MapScale } from "./MapScale.js";
 import { useProject } from "./ProjectContext.js";
 import { ToolCard } from "./ToolCard.js";
@@ -294,43 +295,6 @@ function aoiFeatureCollection(aoi: Aoi | null): GeoJSON.FeatureCollection<GeoJSO
     type: "FeatureCollection",
     features: [{ type: "Feature", properties: {}, geometry: aoi }],
   };
-}
-
-/** The drawing controls a sidebar panel needs. The map instance itself stays private. */
-/** What a new polygon becomes when the Planner finishes drawing it. */
-export type DrawTarget = "aoi" | "exclusion" | "inclusion";
-
-export interface MapContextValue {
-  startDraw: (target: DrawTarget) => void;
-  drawTarget: DrawTarget | null;
-  stopDraw: () => void;
-  /** Reshaping mode: drag a corner, click a midpoint to insert, shift-click to delete. */
-  isEditing: boolean;
-  startEdit: () => void;
-  stopEdit: () => void;
-  /** Why the last gesture was refused, e.g. deleting the third-from-last corner. */
-  editError: string | null;
-
-  /**
-   * Dropping a known-depth reference point (issue #12). Deliberately not a terra-draw
-   * mode: this is one click producing one position, not a polygon, and terra-draw's
-   * point mode would put a feature in its own store that then has to be reconciled with
-   * the soundings the API owns.
-   */
-  isDroppingSounding: boolean;
-  startDropSounding: () => void;
-  stopDropSounding: () => void;
-  /** Where the last drop landed, awaiting a depth. Cleared by the panel once saved. */
-  droppedPoint: { lon: number; lat: number } | null;
-  clearDroppedPoint: () => void;
-}
-
-const MapContext = createContext<MapContextValue | null>(null);
-
-export function useMapControls(): MapContextValue {
-  const ctx = useContext(MapContext);
-  if (!ctx) throw new Error("useMapControls must be called inside MapLayout.");
-  return ctx;
 }
 
 /**
@@ -1165,9 +1129,9 @@ function MapSurface() {
     <div style={{ position: "absolute", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       <div className="sidebar">
-        <MapContext.Provider value={controls}>
+        <MapControlsProvider value={controls}>
           <Outlet />
-        </MapContext.Provider>
+        </MapControlsProvider>
       </div>
       {/* Outside the sidebar, so it is the same readout on every step and the step's own
           panels never push it around. */}

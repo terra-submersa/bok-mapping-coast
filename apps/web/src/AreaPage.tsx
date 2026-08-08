@@ -9,7 +9,7 @@ import {
 import { useMemo, useState } from "react";
 import { AccordionContext } from "./AccordionContext.js";
 import { AoiPanel } from "./AoiPanel.js";
-import { useMapControls } from "./MapLayout.js";
+import { useMapControls } from "./MapContext.js";
 import { useProject } from "./ProjectContext.js";
 import { ProjectPanel } from "./ProjectPanel.js";
 import { ZonePanel } from "./ZonePanel.js";

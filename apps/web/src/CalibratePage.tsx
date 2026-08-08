@@ -2,7 +2,7 @@ import { useState } from "react";
 import { AccordionContext } from "./AccordionContext.js";
 import { useCalibrationState } from "./CalibrationContext.js";
 import { CalibrationPanel } from "./CalibrationPanel.js";
-import { useMapControls } from "./MapLayout.js";
+import { useMapControls } from "./MapContext.js";
 import { useProject } from "./ProjectContext.js";
 import { SoundingPanel } from "./SoundingPanel.js";
 
