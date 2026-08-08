@@ -7,12 +7,12 @@ import {
   polygonAreaKm2,
 } from "@bok/core";
 import { useMemo, useState } from "react";
-import { AccordionContext } from "./AccordionContext.js";
-import { AoiPanel } from "./AoiPanel.js";
-import { useMapControls } from "./MapContext.js";
-import { useProject } from "./ProjectContext.js";
-import { ProjectPanel } from "./ProjectPanel.js";
-import { ZonePanel } from "./ZonePanel.js";
+import { useMapControls } from "../map/MapContext.js";
+import { AccordionContext } from "../panels/AccordionContext.js";
+import { AoiPanel } from "../panels/AoiPanel.js";
+import { ProjectPanel } from "../panels/ProjectPanel.js";
+import { ZonePanel } from "../panels/ZonePanel.js";
+import { useProject } from "../state/ProjectContext.js";
 
 /**
  * Step one: *where*. Draw and reshape the AOI, and — once #17 lands — cut the

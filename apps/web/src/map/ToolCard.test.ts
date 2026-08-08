@@ -6,7 +6,7 @@ import {
   formatLonLat,
   formatUtmMetres,
   formatUtmZone,
-} from "./format.js";
+} from "../lib/format.js";
 import { toolPrompt } from "./ToolCard.js";
 
 describe("toolPrompt", () => {

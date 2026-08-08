@@ -1,7 +1,7 @@
 import type { DepthContourPlan } from "@bok/core";
 import { describe, expect, it } from "vitest";
+import { formatDepthM } from "../lib/format.js";
 import { contourMenuNote } from "./ContourMenu.js";
-import { formatDepthM } from "./format.js";
 
 function plan(overrides: Partial<DepthContourPlan> = {}): DepthContourPlan {
   return {

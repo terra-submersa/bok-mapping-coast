@@ -1,6 +1,6 @@
 import type { ContourRing } from "@bok/core";
+import { formatAreaM2 } from "../lib/format.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import { formatAreaM2 } from "./format.js";
 
 export interface RingPanelProps {
   rings: ContourRing[];

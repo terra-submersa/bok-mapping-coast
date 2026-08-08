@@ -1,5 +1,5 @@
 import { normalise, percentileRange, type Range } from "@bok/core";
-import type { Composite } from "./composite.js";
+import type { Composite } from "../data/composite.js";
 
 /**
  * Shallow-to-deep ramp. Deliberately not a rainbow: a perceptually ordered

@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
-import { loadStoredBoolean, storeBoolean } from "./param-storage.js";
+import { loadStoredBoolean, storeBoolean } from "../data/param-storage.js";
 
 /**
  * Which map interrogation tool has the next click (issue #53).

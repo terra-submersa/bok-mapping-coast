@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Composite } from "./composite.js";
+import type { Composite } from "../data/composite.js";
 import {
   displayGrid,
   MAX_DISPLAY_SIDE,

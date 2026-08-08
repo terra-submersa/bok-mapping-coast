@@ -8,7 +8,7 @@ import {
   type TileRaster,
 } from "@bok/core";
 import { fromArrayBuffer } from "geotiff";
-import { mapPool, PoolTaskError } from "./pool.js";
+import { mapPool, PoolTaskError } from "../lib/pool.js";
 
 export interface Composite {
   width: number;

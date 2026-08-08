@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { AccordionContext } from "./AccordionContext.js";
-import { useCalibrationState } from "./CalibrationContext.js";
-import { CalibrationPanel } from "./CalibrationPanel.js";
-import { useMapControls } from "./MapContext.js";
-import { useProject } from "./ProjectContext.js";
-import { SoundingPanel } from "./SoundingPanel.js";
+import { useMapControls } from "../map/MapContext.js";
+import { AccordionContext } from "../panels/AccordionContext.js";
+import { CalibrationPanel } from "../panels/CalibrationPanel.js";
+import { SoundingPanel } from "../panels/SoundingPanel.js";
+import { useCalibrationState } from "../state/CalibrationContext.js";
+import { useProject } from "../state/ProjectContext.js";
 
 /**
  * Step three: *how deep*. Known-depth readings, and the fit that turns the Stumpf ratio

@@ -1,6 +1,6 @@
+import type { Composite, CompositeProgress } from "../data/composite.js";
+import type { LayerView } from "../state/layer-view.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import type { Composite, CompositeProgress } from "./composite.js";
-import type { LayerView } from "./layer-view.js";
 
 export interface DepthPanelProps {
   hasAoi: boolean;

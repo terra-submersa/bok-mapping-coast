@@ -1,17 +1,17 @@
 import { countVertices } from "@bok/core";
 import { useEffect, useState } from "react";
-import { AccordionContext } from "./AccordionContext.js";
-import { useBoundaryState } from "./BoundaryContext.js";
-import { BufferPanel } from "./BufferPanel.js";
-import { useCalibrationState } from "./CalibrationContext.js";
-import { DepthPanel } from "./DepthPanel.js";
-import { ExportPanel } from "./ExportPanel.js";
-import { useMapControls } from "./MapContext.js";
-import { useProject } from "./ProjectContext.js";
-import { RingPanel } from "./RingPanel.js";
-import { SimplifyPanel } from "./SimplifyPanel.js";
-import { ThresholdPanel } from "./ThresholdPanel.js";
-import { ZonePanel } from "./ZonePanel.js";
+import { useMapControls } from "../map/MapContext.js";
+import { AccordionContext } from "../panels/AccordionContext.js";
+import { BufferPanel } from "../panels/BufferPanel.js";
+import { DepthPanel } from "../panels/DepthPanel.js";
+import { ExportPanel } from "../panels/ExportPanel.js";
+import { RingPanel } from "../panels/RingPanel.js";
+import { SimplifyPanel } from "../panels/SimplifyPanel.js";
+import { ThresholdPanel } from "../panels/ThresholdPanel.js";
+import { ZonePanel } from "../panels/ZonePanel.js";
+import { useBoundaryState } from "../state/BoundaryContext.js";
+import { useCalibrationState } from "../state/CalibrationContext.js";
+import { useProject } from "../state/ProjectContext.js";
 
 /**
  * Step two: *how deep*. Everything between the AOI and a downloadable KML — the

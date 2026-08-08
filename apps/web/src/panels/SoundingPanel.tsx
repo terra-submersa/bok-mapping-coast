@@ -1,7 +1,7 @@
 import type { Sounding } from "@bok/core";
 import { useRef, useState } from "react";
+import { SOUNDING_CSV_URL, type SoundingImport } from "../data/soundings.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import { SOUNDING_CSV_URL, type SoundingImport } from "./soundings.js";
 
 export interface SoundingPanelProps {
   soundings: Sounding[];

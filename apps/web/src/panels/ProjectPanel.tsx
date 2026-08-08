@@ -1,5 +1,5 @@
+import { useProject } from "../state/ProjectContext.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import { useProject } from "./ProjectContext.js";
 
 /**
  * Named projects (issue #8), so Kiladha stays separate from a later site.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type ActiveTool, useTool } from "./ToolContext.js";
+import { type ActiveTool, useTool } from "../state/ToolContext.js";
 
 const OPTIONS: { value: ActiveTool; label: string }[] = [
   { value: null, label: "Off" },

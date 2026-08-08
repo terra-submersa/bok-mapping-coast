@@ -23,8 +23,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet } from "react-router";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
-import { BoundaryProvider, useBoundaryState } from "./BoundaryContext.js";
-import type { Composite } from "./composite.js";
+import type { Composite } from "../data/composite.js";
+import { formatDepthM } from "../lib/format.js";
+import { BoundaryProvider, useBoundaryState } from "../state/BoundaryContext.js";
+import type { LayerView } from "../state/layer-view.js";
+import { useProject } from "../state/ProjectContext.js";
+import { type ActiveTool, useTool } from "../state/ToolContext.js";
+import { useDepthContours } from "../state/useDepthContours.js";
 import {
   rampColour,
   renderComposite,
@@ -33,14 +38,9 @@ import {
   waterRange,
 } from "./depth-ramp.js";
 import { resetDraw } from "./draw-lifecycle.js";
-import { formatDepthM } from "./format.js";
-import type { LayerView } from "./layer-view.js";
 import { type DrawTarget, type MapContextValue, MapControlsProvider } from "./MapContext.js";
 import { MapScale } from "./MapScale.js";
-import { useProject } from "./ProjectContext.js";
 import { ToolCard } from "./ToolCard.js";
-import { type ActiveTool, useTool } from "./ToolContext.js";
-import { useDepthContours } from "./useDepthContours.js";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // Kiladha Bay, Argolic Gulf — same AOI as scripts/spike-sdb-kiladha.mjs.

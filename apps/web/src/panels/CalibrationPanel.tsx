@@ -1,7 +1,7 @@
 import { MIN_CALIBRATION_POINTS, parseSounding, type Sounding } from "@bok/core";
 import { useState } from "react";
+import type { CalibrationState } from "../state/useCalibration.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import type { CalibrationState } from "./useCalibration.js";
 
 export interface CalibrationPanelProps {
   calibration: CalibrationState;

@@ -1,13 +1,13 @@
 import { Navigate, Route, Routes } from "react-router";
+import { MapLayout } from "../map/MapLayout.js";
+import { AreaPage } from "../pages/AreaPage.js";
+import { BoundaryPage } from "../pages/BoundaryPage.js";
+import { CalibratePage } from "../pages/CalibratePage.js";
+import { FlyPage } from "../pages/FlyPage.js";
+import { CalibrationProvider } from "../state/CalibrationContext.js";
+import { ProjectProvider } from "../state/ProjectContext.js";
+import { ToolProvider } from "../state/ToolContext.js";
 import { AppHeader } from "./AppHeader.js";
-import { AreaPage } from "./AreaPage.js";
-import { BoundaryPage } from "./BoundaryPage.js";
-import { CalibratePage } from "./CalibratePage.js";
-import { CalibrationProvider } from "./CalibrationContext.js";
-import { FlyPage } from "./FlyPage.js";
-import { MapLayout } from "./MapLayout.js";
-import { ProjectProvider } from "./ProjectContext.js";
-import { ToolProvider } from "./ToolContext.js";
 
 /**
  * App shell: a fixed banner over one routed view per big feature (issue #35).

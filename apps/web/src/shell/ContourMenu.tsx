@@ -5,10 +5,10 @@ import {
 } from "@bok/core";
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
-import { useCalibrationState } from "./CalibrationContext.js";
-import { formatDepthM } from "./format.js";
-import { useProject } from "./ProjectContext.js";
-import { useContourPlan } from "./useDepthContours.js";
+import { formatDepthM } from "../lib/format.js";
+import { useCalibrationState } from "../state/CalibrationContext.js";
+import { useProject } from "../state/ProjectContext.js";
+import { useContourPlan } from "../state/useDepthContours.js";
 
 const OPTIONS = [
   { value: 0, label: "Off" },

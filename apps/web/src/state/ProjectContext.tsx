@@ -17,11 +17,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { clearStoredAoi, loadStoredAoi, storeAoi } from "./aoi-storage.js";
-import { type Composite, type CompositeProgress, fetchTiledComposite } from "./composite.js";
-import { waterRange } from "./depth-ramp.js";
-import type { LayerView } from "./layer-view.js";
-import { loadStoredNumber, storeNumber } from "./param-storage.js";
+import { clearStoredAoi, loadStoredAoi, storeAoi } from "../data/aoi-storage.js";
+import { type Composite, type CompositeProgress, fetchTiledComposite } from "../data/composite.js";
+import { loadStoredNumber, storeNumber } from "../data/param-storage.js";
 import {
   deleteProject as deleteProjectRequest,
   fetchProject,
@@ -30,20 +28,22 @@ import {
   type ProjectSummary,
   saveProject,
   storeLastOpened,
-} from "./projects.js";
+} from "../data/projects.js";
 import {
   deleteSounding as deleteSoundingRequest,
   importSoundingCsv,
   listSoundings,
   type SoundingImport,
   saveSounding,
-} from "./soundings.js";
+} from "../data/soundings.js";
 import {
   loadStoredExclusions,
   loadStoredInclusions,
   storeExclusions,
   storeInclusions,
-} from "./zone-storage.js";
+} from "../data/zone-storage.js";
+import { waterRange } from "../map/depth-ramp.js";
+import type { LayerView } from "./layer-view.js";
 
 /** Default composite window: the most recent complete summer, as in the spike. */
 const DEFAULT_FROM = "2025-06-01";

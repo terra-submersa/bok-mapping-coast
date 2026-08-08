@@ -1,5 +1,5 @@
+import { formatAreaM2 } from "../lib/format.js";
 import { CollapsibleSection } from "./CollapsibleSection.js";
-import { formatAreaM2 } from "./format.js";
 
 export interface BufferPanelProps {
   metres: number;

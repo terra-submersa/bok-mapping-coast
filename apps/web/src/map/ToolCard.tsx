@@ -5,8 +5,8 @@ import {
   formatLonLat,
   formatUtmMetres,
   formatUtmZone,
-} from "./format.js";
-import { type ActiveTool, useTool } from "./ToolContext.js";
+} from "../lib/format.js";
+import { type ActiveTool, useTool } from "../state/ToolContext.js";
 
 /**
  * What the card says while a tool is waiting for clicks, or null once it has what it
